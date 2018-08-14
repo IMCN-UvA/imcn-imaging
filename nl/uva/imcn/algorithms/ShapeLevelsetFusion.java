@@ -1,4 +1,4 @@
-package nl.uva.imcn.core.shape;
+package nl.uva.imcn.algorithms;
 
 import nl.uva.imcn.utilities.*;
 import nl.uva.imcn.structures.*;

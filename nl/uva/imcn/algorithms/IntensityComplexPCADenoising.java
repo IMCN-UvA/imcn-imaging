@@ -1,4 +1,4 @@
-package nl.uva.imcn.core.intensity;
+package nl.uva.imcn.algorithms;
 
 import nl.uva.imcn.utilities.*;
 import nl.uva.imcn.structures.*;
