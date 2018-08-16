@@ -13,7 +13,7 @@ import Jama.*;
 /*
  * @author Pierre-Louis Bazin
  */
-public class IntensityComplexPCADenoising {
+public class LocalComplexPCADenoising {
 
 	// input parameters
 	private		float[][] 	invmag = null;
@@ -224,7 +224,7 @@ public class IntensityComplexPCADenoising {
             System.out.print("global variations removal phase "+(i+1)+"\n");
             for (int xyz=0;xyz<nxyz;xyz++) phs[xyz] = invphs[i][xyz];
              // unwrap phase images
-            IntensityFastMarchingUnwrapping unwrap = new IntensityFastMarchingUnwrapping();
+            FastMarchingPhaseUnwrapping unwrap = new FastMarchingPhaseUnwrapping();
             unwrap.setPhaseImage(phs);
             unwrap.setDimensions(nx,ny,nz);
             unwrap.setResolutions(rx,ry,rz);

@@ -65,7 +65,7 @@ public class SpatialImageDiffusion {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial probability decomposition\n");		
+		if (debug) System.out.print("initial probability decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
@@ -105,11 +105,11 @@ public class SpatialImageDiffusion {
 		// compute the functional factor
 		//float certaintyfactor = (float)(FastMath.log(0.5)/FastMath.log(factor));
 		float certaintyfactor = factor;
-		BasicInfo.displayMessage("certainty exponent "+certaintyfactor+"\n");
+		System.out.print("certainty exponent "+certaintyfactor+"\n");
 		
 		// rescale the certainty threshold so that it maps to the computed certainty values
 		mincertainty = certaintyFunction(mincertainty,certaintyfactor);
-		BasicInfo.displayMessage("minimum certainty threshold"+mincertainty+"\n");
+		System.out.print("minimum certainty threshold"+mincertainty+"\n");
 		
 		for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
 			int xyzi = x+nx*y+nx*ny*z;
@@ -128,7 +128,7 @@ public class SpatialImageDiffusion {
 		float t0diff = 1.0f;
 		for (int t=0;t<iter && meandiff>diffratio*t0diff;t++) {
 		//for (int t=0;t<iter && maxdiff>0.1f;t++) {
-			BasicInfo.displayMessage("iter "+(t+1));
+			System.out.print("iter "+(t+1));
 			maxdiff = 0.0f;
 			meandiff = 0.0f;
 			float ndiff = 0.0f;
@@ -136,7 +136,7 @@ public class SpatialImageDiffusion {
 			float nproc = 0.0f;
 
 			// main loop
-			BasicInfo.displayMessage(".");
+			System.out.print(".");
 
 			// get the gain ; normalize
 			for (int xyzi=0;xyzi<nx*ny*nz;xyzi++) if (mask[xyzi]) {
@@ -181,7 +181,7 @@ public class SpatialImageDiffusion {
 				for (int c=0;c<nc;c++) image[c][xyzi] = newimg[c][xyzi];
 				signalproba[xyzi] = newproba[xyzi];
 			}
-			BasicInfo.displayMessage("mean diff. "+meandiff+", max diff. "+maxdiff+"\n");
+			System.out.print("mean diff. "+meandiff+", max diff. "+maxdiff+"\n");
 		}
 		newproba = null;
 		newimg = null;

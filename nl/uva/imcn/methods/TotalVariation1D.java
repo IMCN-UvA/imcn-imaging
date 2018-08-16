@@ -109,7 +109,7 @@ public class TotalVariation1D {
 		// the [Imin, Imax] part is taken care of
 		wrapping = 1.0f/lambdaScale;
 		
-		if (debug) BasicInfo.displayMessage("TV:initialisation\n");
+		if (debug) System.out.print("TV:initialisation\n");
 	}
 
 	/** clean-up: destroy membership and centroid arrays */
@@ -291,11 +291,11 @@ public class TotalVariation1D {
     	int t=0;
     	while ((distance>maxdist || t<0) && t<maxiter) {
     		t++;
-    		if (verbose) BasicInfo.displayMessage("iter "+t);
+    		if (verbose) System.out.print("iter "+t);
 			// get the new projection
 			distance = computeProjection();
 			
-			if (verbose) BasicInfo.displayMessage(": d="+distance+"\n");
+			if (verbose) System.out.print(": d="+distance+"\n");
         }
         return;
     }
@@ -313,11 +313,11 @@ public class TotalVariation1D {
     	int t=0;
     	while ((distance>maxdist || t<0) && t<maxiter) {
     		t++;
-    		if (verbose) BasicInfo.displayMessage("iter "+t);
+    		if (verbose) System.out.print("iter "+t);
 			// get the new projection
 			distance = computeProjectionWrapped();
 			
-			if (verbose) BasicInfo.displayMessage(": d="+distance+"\n");
+			if (verbose) System.out.print(": d="+distance+"\n");
         }
         return;
     }
@@ -335,7 +335,7 @@ public class TotalVariation1D {
     	double sqdist = FastMath.sqrt(maxdist);
     	while ((distance>maxdist || t<0) && t<maxiter) {
     		t++;
-    		if (verbose) BasicInfo.displayMessage("iter "+t);
+    		if (verbose) System.out.print("iter "+t);
 			// get the new projection
 			distance = computeProjection();
 			
@@ -370,7 +370,7 @@ public class TotalVariation1D {
 				// update the lambda
 				lambdaScale *= ratio;
 			}
-			if (verbose) BasicInfo.displayMessage(": d="+distance+", f="+fn+", r="+ratio+"\n");
+			if (verbose) System.out.print(": d="+distance+", f="+fn+", r="+ratio+"\n");
         }
         return;
     }

@@ -143,7 +143,7 @@ public class AverageGdm {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//if (debug) System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -153,14 +153,14 @@ public class AverageGdm {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial GDM decomposition\n");		
+		if (debug) System.out.print("initial GDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
 			if (x<=1 || x>=nx-2 || y<=1 || y>=ny-2 || z<=1 || z>=nz-2) mask[x][y][z] = false;
 			else mask[x][y][z] = true;
 		}
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	public void finalize() {
@@ -346,7 +346,7 @@ public class AverageGdm {
 		boolean[] nbflag = new boolean[6];
 					        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
         heap.reset();
         heap.setMaxTree();
 		// initialize the heap from dist0
@@ -369,7 +369,7 @@ public class AverageGdm {
 				}
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         float maxdist = 0.0f;
@@ -419,7 +419,7 @@ public class AverageGdm {
 			avglevelset[x][y][z] = recomputed[x][y][z];
 		}
 		
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }

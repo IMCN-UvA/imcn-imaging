@@ -113,7 +113,7 @@ public class BasicDemonsWarping {
 		gz = (kernel[Z].length-1)/2;
 				
 		isWorking = true;
-		if (debug) BasicInfo.displayMessage("Basic Demons:initialisation\n");
+		if (debug) System.out.print("Basic Demons:initialisation\n");
 	}
 
 	final public void finalize() {
@@ -151,7 +151,7 @@ public class BasicDemonsWarping {
 				s[Z][xyz] = z*scale;
 			}
 		} else {
-			if (debug) BasicInfo.displayMessage("transform matrix: \n ["+transform[X][X]+", "+transform[X][Y]+", "+transform[X][Z]+", "+transform[X][T]+"]\n ["
+			if (debug) System.out.print("transform matrix: \n ["+transform[X][X]+", "+transform[X][Y]+", "+transform[X][Z]+", "+transform[X][T]+"]\n ["
 															   +transform[Y][X]+", "+transform[Y][Y]+", "+transform[Y][Z]+", "+transform[Y][T]+"]\n ["
 															   +transform[Z][X]+", "+transform[Z][Y]+", "+transform[Z][Z]+", "+transform[Z][T]+"]\n");
 			
@@ -190,7 +190,7 @@ public class BasicDemonsWarping {
 	 */
     final public void registerImageToTarget() {
 		
-		if (debug) BasicInfo.displayMessage("update: ");
+		if (debug) System.out.print("update: ");
 		
 		float meanDiff = 0.0f;
 		for (int x=1;x<nsx-1;x++) for (int y=1;y<nsy-1;y++) for (int z=1;z<nsz-1;z++) {
@@ -266,7 +266,7 @@ public class BasicDemonsWarping {
 		meanDiff /= (nix*niy*niz);
 		
 		if (regType==FLUID || regType==MIXED) {
-			if (debug) BasicInfo.displayMessage("GAUSS_FLUID regularization \n");
+			if (debug) System.out.print("GAUSS_FLUID regularization \n");
 		
 			// smooth the result with a gaussian kernel
 			u[X] = ImageFilters.separableConvolution(u[X],nsx,nsy,nsz,kernel,gx,gy,gz);
@@ -275,7 +275,7 @@ public class BasicDemonsWarping {
 		}
 		
 		// compose the transformations
-		if (debug) BasicInfo.displayMessage("compose with current transform \n");
+		if (debug) System.out.print("compose with current transform \n");
 						
 		for (int x=0;x<nsx;x++) for (int y=0;y<nsy;y++) for (int z=0;z<nsz;z++) {
 			int xyz = x+nsx*y+nsx*nsy*z;
@@ -291,7 +291,7 @@ public class BasicDemonsWarping {
 		}
 		
 		if (regType==DIFFUSION || regType==MIXED) {
-			if (debug) BasicInfo.displayMessage("GAUSS_DIFFUSION regularization \n");
+			if (debug) System.out.print("GAUSS_DIFFUSION regularization \n");
 			
 			// smooth the result with a gaussian kernel
 			c[X] = ImageFilters.separableConvolution(c[X],nsx,nsy,nsz,kernel,gx,gy,gz);
@@ -311,7 +311,7 @@ public class BasicDemonsWarping {
 		}
 		meanC /= (nsx*nsy*nsz);
 		
-		if (debug) BasicInfo.displayMessage("convergence "+meanC+" -> "+meanDiff+"\n");
+		if (debug) System.out.print("convergence "+meanC+" -> "+meanDiff+"\n");
 
         return;
     } // 

@@ -219,7 +219,7 @@ public class SmoothGdm {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//if (debug) System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -229,7 +229,7 @@ public class SmoothGdm {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial GDM decomposition\n");		
+		if (debug) System.out.print("initial GDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
@@ -248,7 +248,7 @@ public class SmoothGdm {
 				segmentation[xyz] = BG;
 			}
         }
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	public SmoothGdm(float[] lvlsetin_, float[] lvlsettrg_, int nx_, int ny_, int nz_, float rx_, float ry_, float rz_,
@@ -314,7 +314,7 @@ public class SmoothGdm {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//if (debug) System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -324,7 +324,7 @@ public class SmoothGdm {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial GDM decomposition\n");		
+		if (debug) System.out.print("initial GDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
@@ -343,7 +343,7 @@ public class SmoothGdm {
 				segmentation[xyz] = BG;
 			}
         }
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 
 	public void finalize() {
@@ -430,7 +430,7 @@ public class SmoothGdm {
 		boolean[] nbflag = new boolean[6];
 					        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
         heap.reset();
 		// initialize the heap from boundaries
         for (int xyz = 0; xyz<nx*ny*nz; xyz++) if (mask[xyz]) {
@@ -446,7 +446,7 @@ public class SmoothGdm {
                 }
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         float maxdist = 0.0f;
@@ -499,7 +499,7 @@ public class SmoothGdm {
 			else levelset[xyz] = maxdist;
 		}
 		
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }

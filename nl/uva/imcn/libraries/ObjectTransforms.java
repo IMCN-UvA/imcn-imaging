@@ -656,7 +656,7 @@ public class ObjectTransforms {
 		BinaryHeap2D heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap2D.MINTREE);
 				        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        //if (debug) BasicInfo.displayMessage("fast marching\n");		
+        //if (debug) System.out.print("fast marching\n");		
         heap.reset();
         // initialize mask and processing domain
 		float maxlvl = Numerics.max(nx/2.0f,ny/2.0f,nz/2.0f);
@@ -687,7 +687,7 @@ public class ObjectTransforms {
                 }
             }
         }
-		//if (debug) BasicInfo.displayMessage("init\n");		
+		//if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         float maxdist = 0.0f;
@@ -730,7 +730,7 @@ public class ObjectTransforms {
 				}
 			}			
 		}
-		//if (debug) BasicInfo.displayMessage("done\n");		
+		//if (debug) System.out.print("done\n");		
 		
        return levelset;
      }
@@ -746,7 +746,7 @@ public class ObjectTransforms {
 		BinaryHeap2D heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap2D.MINTREE);
 				        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        //if (debug) BasicInfo.displayMessage("fast marching\n");		
+        //if (debug) System.out.print("fast marching\n");		
         heap.reset();
         // initialize mask and processing domain
         float maxlvl = Numerics.max(nx/2.0f,ny/2.0f,nz/2.0f);
@@ -777,7 +777,7 @@ public class ObjectTransforms {
                 }
             }
         }
-		//if (debug) BasicInfo.displayMessage("init\n");		
+		//if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         float maxdist = 0.0f;
@@ -820,7 +820,7 @@ public class ObjectTransforms {
 				}
 			}			
 		}
-		//if (debug) BasicInfo.displayMessage("done\n");		
+		//if (debug) System.out.print("done\n");		
 		
        return levelset;
      }
@@ -835,7 +835,7 @@ public class ObjectTransforms {
 		BinaryHeap2D heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap2D.MINTREE);
 				        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        //if (debug) BasicInfo.displayMessage("fast marching\n");		
+        //if (debug) System.out.print("fast marching\n");		
         heap.reset();
         // initialize mask and processing domain
         //float maxlvl = Numerics.max(nx/2.0f,ny/2.0f,nz/2.0f);
@@ -867,7 +867,7 @@ public class ObjectTransforms {
                 }
             }
         }
-		//if (debug) BasicInfo.displayMessage("init\n");		
+		//if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         float dist = 0.0f;
@@ -918,7 +918,7 @@ public class ObjectTransforms {
 				else levelset[xyz] = maxlvl;
 			}
 		}
-		//if (debug) BasicInfo.displayMessage("done\n");		
+		//if (debug) System.out.print("done\n");		
 		
        return levelset;
      }

@@ -921,16 +921,6 @@ public class ObjectStatistics {
 		boolean[][][] bound1, bound2;
 		float[][][] dist1,dist2;
 		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
-		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
 		
@@ -963,17 +953,6 @@ public class ObjectStatistics {
 		boolean[] bound1, bound2;
 		float[] dist1,dist2;
 		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
-		
-		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
 		
 		// convert to boundaries
@@ -1006,16 +985,6 @@ public class ObjectStatistics {
 		float minres = Numerics.min(Numerics.min(rx,ry),rz);
 		boolean[][][] bound1, bound2;
 		float[][][] dist1,dist2;
-		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
 		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
@@ -1055,16 +1024,6 @@ public class ObjectStatistics {
 		boolean[] bound1, bound2;
 		float[] dist1,dist2;
 		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
-		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
 		
@@ -1102,16 +1061,6 @@ public class ObjectStatistics {
 		float minres = Numerics.min(Numerics.min(rx,ry),rz);
 		boolean[][][] bound1, bound2;
 		float[][][] dist1,dist2;
-		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
 		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
@@ -1163,16 +1112,6 @@ public class ObjectStatistics {
 		boolean[] bound1, bound2;
 		float[] dist1,dist2;
 		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
-		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
 		
@@ -1223,16 +1162,6 @@ public class ObjectStatistics {
 		boolean[][][] bound1, bound2;
 		float[][][] dist1,dist2;
 		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
-		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;
 		
@@ -1272,16 +1201,6 @@ public class ObjectStatistics {
 		float minres = Numerics.min(Numerics.min(rx,ry),rz);
 		boolean[] bound1, bound2;
 		float[] dist1,dist2;
-		
-		// crop the objects for speed
-		ImageCropping crop = new ImageCropping(nx,ny,nz);
-		crop.setBorderSize(1);
-		crop.findCroppingBoundaries(obj1,obj2);
-		obj1 = crop.cropImage(obj1);
-		obj2 = crop.cropImage(obj2);
-		nx = crop.mx();
-		ny = crop.my();
-		nz = crop.mz();
 		
 		// check for empty objects
 		if ( volume(obj1,nx,ny,nz)==0 || volume(obj2,nx,ny,nz)==0 ) return -1.0f;

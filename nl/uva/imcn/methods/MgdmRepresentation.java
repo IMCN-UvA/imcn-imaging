@@ -149,7 +149,7 @@ public class MgdmRepresentation {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial MGDM decomposition\n");		
+		if (debug) System.out.print("initial MGDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
@@ -179,7 +179,7 @@ public class MgdmRepresentation {
 		// build the full model
 		fastMarchingReinitialization(stopDist, false, true);
 		
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	/**
@@ -226,7 +226,7 @@ public class MgdmRepresentation {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial MGDM decomposition\n");		
+		if (debug) System.out.print("initial MGDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
@@ -256,7 +256,7 @@ public class MgdmRepresentation {
 		// build the full model
 		fastMarchingReinitialization(stopDist, false, true);
 		
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	/**
@@ -303,7 +303,7 @@ public class MgdmRepresentation {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial MGDM decomposition\n");		
+		if (debug) System.out.print("initial MGDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nx; x++) for (int y=0; y<ny; y++) for (int z = 0; z<nz; z++) {
@@ -333,7 +333,7 @@ public class MgdmRepresentation {
 		// build the full model
 		fastMarchingReinitialization(stopDist, false, true);
 		
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	public void finalize() {
@@ -548,7 +548,7 @@ public class MgdmRepresentation {
 		boolean done, isprocessed;
 		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
 
 		long start_time = System.currentTimeMillis(); 
 
@@ -574,7 +574,7 @@ public class MgdmRepresentation {
                 }
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         while (heap.isNotEmpty()) {
@@ -637,7 +637,7 @@ public class MgdmRepresentation {
 		}
 		// to create the MGDM functions, we need to copy the segmentation, forget the last labels
 		// and compute differences between distance functions
-		if (debug) BasicInfo.displayMessage("transform into MGDM functions\n");		
+		if (debug) System.out.print("transform into MGDM functions\n");		
 		for (int xyz = 0; xyz<nx*ny*nz; xyz++) if (mask[xyz]) {
 			// label permutation
 			for (int n=nmgdm;n>0;n--) {
@@ -651,7 +651,7 @@ public class MgdmRepresentation {
         														-mgdmfunctions[n-1][xyz]);
         	}
         }
-		if (debug) BasicInfo.displayMessage("done (time: " + (System.currentTimeMillis()-start_time)+")\n"); 
+		if (debug) System.out.print("done (time: " + (System.currentTimeMillis()-start_time)+")\n"); 
 
        return;
     }

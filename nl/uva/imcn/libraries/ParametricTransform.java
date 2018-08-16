@@ -55,7 +55,7 @@ public class ParametricTransform {
 		else if (type_.equals("fully_affine")) { type = FULLY_AFFINE; Nt = 12; }
 		else { type = NONE; Nt = 0; }
 		
-		if (debug) BasicInfo.displayMessage("transform type: "+type_+"("+type+")\n");
+		if (debug) System.out.print("transform type: "+type_+"("+type+")\n");
 		
 		x0i = x0i_; y0i = y0i_; z0i = z0i_;
 		rix = rix_; riy = riy_; riz = riz_;
@@ -579,10 +579,10 @@ public class ParametricTransform {
 			for (int n=0;n<3;n++) newtrans[9+n] = trans[3+n];
 			for (int n=12;n<Nn;n++) newtrans[n] = 0.0f;
 		} else {
-			BasicInfo.displayMessage("change from "+oldType_+" to "+newType_+" currently not supported\n");
+			System.out.print("change from "+oldType_+" to "+newType_+" currently not supported\n");
 			return trans;
 		}
-		BasicInfo.displayMessage("change from "+oldType_+" to "+newType_+" done ("+newtrans.length+")\n");
+		System.out.print("change from "+oldType_+" to "+newType_+" done ("+newtrans.length+")\n");
 		return newtrans;
 	}
 	

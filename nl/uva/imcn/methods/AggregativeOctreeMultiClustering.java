@@ -942,7 +942,7 @@ public class AggregativeOctreeMultiClustering {
 		float beta = ImageStatistics.robustExponentialFit(scale, true, ncluster);
 
 		float threshold = beta*(float)FastMath.log(maxscale/beta);
-		BasicInfo.displayMessage("cluster threshold "+threshold+"\n");
+		System.out.print("cluster threshold "+threshold+"\n");
 		
 		return Numerics.ceil(threshold);
 	}

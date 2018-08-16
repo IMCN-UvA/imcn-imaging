@@ -228,7 +228,7 @@ public class MgdmSegmentationCorrection {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//if (verbose) System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -238,7 +238,7 @@ public class MgdmSegmentationCorrection {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial MGDM decomposition\n");		
+		if (debug) System.out.print("initial MGDM decomposition\n");		
 		
 		
 		// init segmentation
@@ -294,7 +294,7 @@ public class MgdmSegmentationCorrection {
 		// init MGDM boundaries
 		mgdmfunctions[0] = bound_;
 
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	public void finalize() {
@@ -1007,7 +1007,7 @@ public class MgdmSegmentationCorrection {
 		boolean done, isprocessed;
 					        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
         heap.reset();
 		// initialize the heap from boundaries
         for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
@@ -1021,7 +1021,7 @@ public class MgdmSegmentationCorrection {
                 }
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         while (heap.isNotEmpty()) {
@@ -1093,7 +1093,7 @@ public class MgdmSegmentationCorrection {
 		
 		// to create the MGDM functions, we need to copy the segmentation, forget the last labels
 		// and compute differences between distance functions
-		if (debug) BasicInfo.displayMessage("transform into MGDM functions\n");		
+		if (debug) System.out.print("transform into MGDM functions\n");		
 		for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
 			// label permutation
 			for (int n=nmgdm;n>0;n--) {
@@ -1107,7 +1107,7 @@ public class MgdmSegmentationCorrection {
         														-mgdmfunctions[n-1][xyz]);
 			}
         }
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }
@@ -1124,7 +1124,7 @@ public class MgdmSegmentationCorrection {
 		boolean done, isprocessed;
 		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
 
 		long start_time = System.currentTimeMillis(); 
 
@@ -1150,7 +1150,7 @@ public class MgdmSegmentationCorrection {
                 }
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         while (heap.isNotEmpty()) {
@@ -1213,7 +1213,7 @@ public class MgdmSegmentationCorrection {
 		}
 		// to create the MGDM functions, we need to copy the segmentation, forget the last labels
 		// and compute differences between distance functions
-		if (debug) BasicInfo.displayMessage("transform into MGDM functions\n");		
+		if (debug) System.out.print("transform into MGDM functions\n");		
 		for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
 			// label permutation
 			for (int n=nmgdm;n>0;n--) {
@@ -1227,7 +1227,7 @@ public class MgdmSegmentationCorrection {
         														-mgdmfunctions[n-1][xyz]);
         	}
         }
-		if (debug) BasicInfo.displayMessage("done (time: " + (System.currentTimeMillis()-start_time)+")\n"); 
+		if (debug) System.out.print("done (time: " + (System.currentTimeMillis()-start_time)+")\n"); 
 
        return;
     }
