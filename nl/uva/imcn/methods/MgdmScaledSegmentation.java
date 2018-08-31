@@ -2,9 +2,6 @@ package nl.uva.imcn.methods;
 
 import java.io.*;
 import java.util.*;
-import gov.nih.mipav.view.*;
-
-import gov.nih.mipav.model.structures.jama.*;
 
 import nl.uva.imcn.libraries.*;
 import nl.uva.imcn.structures.*;

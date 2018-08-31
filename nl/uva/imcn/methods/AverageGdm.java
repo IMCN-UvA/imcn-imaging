@@ -2,16 +2,10 @@ package nl.uva.imcn.methods;
 
 import java.io.*;
 import java.util.*;
-import gov.nih.mipav.view.*;
-
-import gov.nih.mipav.model.structures.jama.*;
 
 import nl.uva.imcn.structures.*;
 import nl.uva.imcn.utilities.*;
 import nl.uva.imcn.libraries.*;
-
-import javax.vecmath.*;
-//import WildMagic.LibFoundation.Mathematics.Vector3f;
 
 import org.apache.commons.math3.distribution.NormalDistribution;
 import org.apache.commons.math3.util.FastMath;
