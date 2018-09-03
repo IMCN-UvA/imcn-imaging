@@ -2,9 +2,6 @@ package nl.uva.imcn.methods;
 
 import java.io.*;
 import java.util.*;
-import gov.nih.mipav.view.*;
-
-import gov.nih.mipav.model.structures.jama.*;
 
 import nl.uva.imcn.libraries.*;
 import nl.uva.imcn.structures.*;
@@ -332,7 +329,7 @@ public class MgdmScaledSegmentation {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -342,7 +339,7 @@ public class MgdmScaledSegmentation {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial MGDM decomposition\n");		
+		if (debug) System.out.print("initial MGDM decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nix; x++) for (int y=0; y<niy; y++) for (int z = 0; z<niz; z++) {
@@ -352,7 +349,7 @@ public class MgdmScaledSegmentation {
 		// init decomposition
 		fastMarchingInitializationFromSegmentation(init_);
 				
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 	public void finalize() {
@@ -434,7 +431,7 @@ public class MgdmScaledSegmentation {
 		boolean[] nbflag = new boolean[6];
 					        		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
         heap.reset();
 		// initialize the heap from boundaries
         for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
@@ -449,7 +446,7 @@ public class MgdmScaledSegmentation {
                 }
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         while (heap.isNotEmpty()) {
@@ -510,7 +507,7 @@ public class MgdmScaledSegmentation {
 		}
 		// to create the MGDM functions, we need to copy the segmentation, forget the last labels
 		// and compute differences between distance functions
-		if (debug) BasicInfo.displayMessage("transform into MGDM functions\n");		
+		if (debug) System.out.print("transform into MGDM functions\n");		
 		for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
 			// label permutation
 			for (int n=nmgdm;n>0;n--) {
@@ -524,7 +521,7 @@ public class MgdmScaledSegmentation {
         														-mgdmfunctions[n-1][xyz]);
 			}
         }
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }
@@ -541,7 +538,7 @@ public class MgdmScaledSegmentation {
 		boolean done, isprocessed;
 		
 		// compute the neighboring labels and corresponding distance functions (! not the MGDM functions !)
-        if (debug) BasicInfo.displayMessage("fast marching\n");		
+        if (debug) System.out.print("fast marching\n");		
         heap.reset();
 		// initialize the heap from boundaries
         for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
@@ -564,7 +561,7 @@ public class MgdmScaledSegmentation {
                 }
             }
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 
         // grow the labels and functions
         while (heap.isNotEmpty()) {
@@ -625,7 +622,7 @@ public class MgdmScaledSegmentation {
 		}
 		// to create the MGDM functions, we need to copy the segmentation, forget the last labels
 		// and compute differences between distance functions
-		if (debug) BasicInfo.displayMessage("transform into MGDM functions\n");		
+		if (debug) System.out.print("transform into MGDM functions\n");		
 		for (int xyz = 0; xyz<nix*niy*niz; xyz++) if (mask[xyz]) {
 			// label permutation
 			for (int n=nmgdm;n>0;n--) {
@@ -639,7 +636,7 @@ public class MgdmScaledSegmentation {
         														-mgdmfunctions[n-1][xyz]);
         	}
         }
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }

@@ -1147,12 +1147,12 @@ public class ImageStatistics {
 		// med = sigma x sqrt(2) x erf-1(1/2)
 		double sigma2 = median*median/0.45493642;
 		
-		BasicInfo.displayMessage("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
+		System.out.print("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
 		
 		if (outliers) {
 			double sigma2prev;
 			for (int t=0;t<20;t++) {
-				BasicInfo.displayMessage("iteration "+(t+1)+"\n");
+				System.out.print("iteration "+(t+1)+"\n");
 
 				sigma2prev = sigma2;
 				
@@ -1165,12 +1165,12 @@ public class ImageStatistics {
 				}
 				ratio /= nb;
 				
-				BasicInfo.displayMessage("outlier ratio: "+ratio+"\n");
+				System.out.print("outlier ratio: "+ratio+"\n");
 				
 				median = measure.evaluate(50.0*(1.0-ratio));
 				sigma2 = median*median/0.45493642;
 				
-				BasicInfo.displayMessage("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
+				System.out.print("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
 				
 				// stopping criterion: less than 1% change in relative value
 				if (2.0*Numerics.abs(FastMath.sqrt(sigma2)-FastMath.sqrt(sigma2prev))
@@ -1199,12 +1199,12 @@ public class ImageStatistics {
 		// med = sigma x sqrt(2) x erf-1(1/2)
 		double sigma2 = median*median/0.45493642;
 		
-		//BasicInfo.displayMessage("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
+		//System.out.print("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
 		
 		if (outliers) {
 			double sigma2prev;
 			for (int t=0;t<20 && sigma2>0;t++) {
-				//BasicInfo.displayMessage("iteration "+(t+1)+"\n");
+				//System.out.print("iteration "+(t+1)+"\n");
 
 				sigma2prev = sigma2;
 				
@@ -1218,12 +1218,12 @@ public class ImageStatistics {
 				ratio /= nb;
 				
 				if (ratio<0.9) {
-					//BasicInfo.displayMessage("outlier ratio: "+ratio+"\n");
+					//System.out.print("outlier ratio: "+ratio+"\n");
 					
 					median = measure.evaluate(50.0*(1.0-ratio));
 					sigma2 = median*median/0.45493642;
 					
-					//BasicInfo.displayMessage("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
+					//System.out.print("parameter estimates: sigma "+FastMath.sqrt(sigma2)+"\n");
 					
 					// stopping criterion: less than 1% change in relative value
 					if (2.0*Numerics.abs(FastMath.sqrt(sigma2)-FastMath.sqrt(sigma2prev))
@@ -1272,12 +1272,12 @@ public class ImageStatistics {
 		// med = beta x log(2)
 		double beta = median/FastMath.log(2.0);
 		
-		//BasicInfo.displayMessage("parameter estimates: beta "+beta+"\n");
+		//System.out.print("parameter estimates: beta "+beta+"\n");
 		
 		if (outliers) {
 			double betaprev;
 			for (int t=0;t<20 && beta>0;t++) {
-				//BasicInfo.displayMessage("iteration "+(t+1)+"\n");
+				//System.out.print("iteration "+(t+1)+"\n");
 
 				betaprev = beta;
 				
@@ -1289,12 +1289,12 @@ public class ImageStatistics {
 				}
 				ratio /= nb;
 				
-				//BasicInfo.displayMessage("outlier ratio: "+ratio+"\n");
+				//System.out.print("outlier ratio: "+ratio+"\n");
 				if (ratio<0.9) {
 					median = measure.evaluate(50.0*(1.0-ratio));
 					beta = median/FastMath.log(2.0);
 					
-					//BasicInfo.displayMessage("parameter estimates: beta "+beta+"\n");
+					//System.out.print("parameter estimates: beta "+beta+"\n");
 					
 					// stopping criterion: less than 1% change in relative value
 					if (2.0*Numerics.abs(beta-betaprev)/(beta+betaprev)<0.01) t=1000;

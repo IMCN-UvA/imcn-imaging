@@ -1,4 +1,4 @@
-package nl.uva.imcn.core.intensity;
+package nl.uva.imcn.algorithms;
 
 import nl.uva.imcn.utilities.*;
 import nl.uva.imcn.structures.*;
@@ -13,7 +13,7 @@ import Jama.*;
 /*
  * @author Pierre-Louis Bazin
  */
-public class IntensityComplexPCADenoising {
+public class LocalComplexPCADenoising {
 
 	// input parameters
 	private		float[][] 	invmag = null;
@@ -27,7 +27,7 @@ public class IntensityComplexPCADenoising {
 	private     int         maxDimension = -1;
 	private     int         ngbSize = 5;
 	private     int         winSize = -1;
-	//private     boolean     separate = false;
+	private     boolean     unwrap = true;
 	//private     boolean     tvmag = false;
 	//private     boolean     tvphs = false;
 	
@@ -99,7 +99,7 @@ public class IntensityComplexPCADenoising {
 	public final void setMaximumDimension(int in) { maxDimension = in; }
 	public final void setPatchSize(int in) { ngbSize = in; }
 	public final void setWindowSize(int in) { winSize = in; }
-	//public final void setSeparateProcessing(boolean in) { separate = in; }
+	public final void setUnwrapPhase(boolean in) { unwrap = in; }
 	
 	//public final void setMagnitudeTVSubtraction(boolean in) { tvmag = in; }
 	//public final void setPhaseTVSubtraction(boolean in) { tvphs = in; }
@@ -116,10 +116,10 @@ public class IntensityComplexPCADenoising {
 	public final String getName() { return "Complex PCA denoising"; }
 
 	public final String[] getAlgorithmAuthors() { return new String[]{"Pierre-Louis Bazin"}; }
-	public final String getAffiliation() { return "Spinoza Centre for  Neuroimaging | Netherlands Institute for Neuroscience | Max Planck Institute for Human Cognitive and Brain Sciences"; }
+	public final String getAffiliation() { return "Integrated Model-based Cognitive Neuroscience Reseaerch Unit, Universiteit van Amsterdam"; }
 	public final String getDescription() { return "Denoise the data with a PCA-based method (adapted from Manjon et al., Plos One 2013."; }
 		
-	public final String getVersion() { return "3.1.3"; }
+	public final String getVersion() { return "1.0"; }
 
 	// get outputs
 	public float[] getDenoisedMagnitudeImageAt(int n) { return invmag[n]; }
@@ -204,44 +204,59 @@ public class IntensityComplexPCADenoising {
 		// we assume 4D images of size nimg
 		if (invmag==null || invphs==null) System.out.print("data stacks not properly initialized!\n");
 		
-		// renormalize phase
-		float phsmin = invphs[0][0];
-		float phsmax = invphs[0][0];
-        for (int i=0;i<nimg;i++) {
-            for (int xyz=0;xyz<nxyz;xyz++) {
-                if (invphs[i][xyz]<phsmin) phsmin = invphs[i][xyz];
-                if (invphs[i][xyz]>phsmax) phsmax = invphs[i][xyz];
+		double phsscale = 1.0;
+		float[][] tvimgphs = null;
+        if (unwrap) {
+            // renormalize phase
+            float phsmin = invphs[0][0];
+            float phsmax = invphs[0][0];
+            for (int i=0;i<nimg;i++) {
+                for (int xyz=0;xyz<nxyz;xyz++) {
+                    if (invphs[i][xyz]<phsmin) phsmin = invphs[i][xyz];
+                    if (invphs[i][xyz]>phsmax) phsmax = invphs[i][xyz];
+                }
             }
-		}
-		double phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
-		
-		// unwrap phase and remove TV global variations
-        float[][] tvimgphs = null;
-		//if (tvphs) {
-        tvimgphs = new float[nimg][];
-        float[] phs = new float[nxyz];
-        for (int i=0;i<nimg;i++) {
-            System.out.print("global variations removal phase "+(i+1)+"\n");
-            for (int xyz=0;xyz<nxyz;xyz++) phs[xyz] = invphs[i][xyz];
-             // unwrap phase images
-            IntensityFastMarchingUnwrapping unwrap = new IntensityFastMarchingUnwrapping();
-            unwrap.setPhaseImage(phs);
-            unwrap.setDimensions(nx,ny,nz);
-            unwrap.setResolutions(rx,ry,rz);
-            unwrap.setTVScale(0.33f);
-            unwrap.setTVPostProcessing("TV-approximation");
-            unwrap.execute();
-            tvimgphs[i] = unwrap.getCorrectedImage();
-            for (int xyz=0;xyz<nxyz;xyz++) invphs[i][xyz] -= tvimgphs[i][xyz];
+            phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
+            
+            // unwrap phase and remove TV global variations
+            //if (tvphs) {
+            tvimgphs = new float[nimg][];
+            float[] phs = new float[nxyz];
+            for (int i=0;i<nimg;i++) {
+                System.out.print("global variations removal phase "+(i+1)+"\n");
+                for (int xyz=0;xyz<nxyz;xyz++) phs[xyz] = invphs[i][xyz];
+                 // unwrap phase images
+                FastMarchingPhaseUnwrapping unwrap = new FastMarchingPhaseUnwrapping();
+                unwrap.setPhaseImage(phs);
+                unwrap.setDimensions(nx,ny,nz);
+                unwrap.setResolutions(rx,ry,rz);
+                unwrap.setTVScale(0.33f);
+                unwrap.setTVPostProcessing("TV-approximation");
+                unwrap.execute();
+                tvimgphs[i] = unwrap.getCorrectedImage();
+                for (int xyz=0;xyz<nxyz;xyz++) invphs[i][xyz] = (float)(invphs[i][xyz]/phsscale - tvimgphs[i][xyz]);
+            }
+        } else {
+            // still do the TV global variation removal
+            tvimgphs = new float[nimg][];
+            float[] phs = new float[nxyz];
+            for (int i=0;i<nimg;i++) {
+                System.out.print("global variations removal phase "+(i+1)+"\n");
+                for (int xyz=0;xyz<nxyz;xyz++) phs[xyz] = invphs[i][xyz];
+                TotalVariation1D algo = new TotalVariation1D(phs,null,nx,ny,nz, 0.33f, 0.125f, 0.00001f, 500);
+                algo.setScaling((float)(2.0*FastMath.PI));
+                algo.solve();
+                tvimgphs[i] = algo.exportResult();
+                for (int xyz=0;xyz<nxyz;xyz++) invphs[i][xyz] -= tvimgphs[i][xyz];
+            }
         }
-        //}
 		
 		// 1. create all the sin, cos images
 		images = new float[2*nimg][nxyz];
 		for (int i=0;i<nimg;i++) {
             for (int xyz=0;xyz<nxyz;xyz++) {
-                images[2*i][xyz] = (float)(invmag[i][xyz]*FastMath.cos(invphs[i][xyz]/phsscale));
-                images[2*i+1][xyz] = (float)(invmag[i][xyz]*FastMath.sin(invphs[i][xyz]/phsscale));
+                images[2*i][xyz] = (float)(invmag[i][xyz]*FastMath.cos(invphs[i][xyz]));
+                images[2*i+1][xyz] = (float)(invmag[i][xyz]*FastMath.sin(invphs[i][xyz]));
             }
         }
         invmag = null;
@@ -459,15 +474,12 @@ public class IntensityComplexPCADenoising {
             }
         }
         
-        // opt. add back the TV estimate, if needed
-        //if (tvphs) {
+        // opt. add back the TV estimate
         for (int i=0;i<nimg;i++) for (int xyz=0;xyz<nxyz;xyz++) {
             invphs[i][xyz] += tvimgphs[i][xyz];
             // wrap around phase values?
-            invphs[i][xyz] = Numerics.modulo(invphs[i][xyz], phsmax-phsmin);
+            invphs[i][xyz] = (float)(Numerics.modulo(invphs[i][xyz], 2.0*FastMath.PI)*phsscale);
         }
-        //}
-		return;
 	}
 
 	private void executeMagnitudeDenoising() {

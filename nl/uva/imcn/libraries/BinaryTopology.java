@@ -130,7 +130,7 @@ public class BinaryTopology {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//if (debug) System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -147,7 +147,7 @@ public class BinaryTopology {
 			else mask[x+nx*y+nx*ny*z] = false;
 		}
 
-		if (debug) BasicInfo.displayMessage("initialization\n");
+		if (debug) System.out.print("initialization\n");
 	}
 		
 
@@ -186,7 +186,7 @@ public class BinaryTopology {
 	public final void insideSphericalTopology() {
 		
 		// from the boundary, find the middle (approx)
-		if (debug) BasicInfo.displayMessage("fast marching init\n");		
+		if (debug) System.out.print("fast marching init\n");		
         heap.reset();
         boolean[] processed = new boolean[nx*ny*nz];
         float[] sqdist = new float[nx*ny*nz];
@@ -209,7 +209,7 @@ public class BinaryTopology {
 				processed[xyz] = true;
 			}
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 		
         // grow the distance to boundary
 		float maxdist = 0.0f;
@@ -248,7 +248,7 @@ public class BinaryTopology {
 		}
 		
 		// redo with topology constraints, from the center
-		if (debug) BasicInfo.displayMessage("fast marching regrowth\n");		
+		if (debug) System.out.print("fast marching regrowth\n");		
         heap.reset();
 		for (int xyz = 0; xyz<nx*ny*nz; xyz++) {
         	sqdist[xyz] = 0;
@@ -270,7 +270,7 @@ public class BinaryTopology {
 				heap.addValue(1.0f,xyzn,OBJ);
 			}
 		}
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 		
         // grow back to the boundary
 		while (heap.isNotEmpty()) {
@@ -306,7 +306,7 @@ public class BinaryTopology {
 		}
 		
 		
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }
@@ -314,7 +314,7 @@ public class BinaryTopology {
 	public final void outsideSphericalTopology() {
 		
 		// from the image boundary, to the object
-		if (debug) BasicInfo.displayMessage("fast marching init\n");		
+		if (debug) System.out.print("fast marching init\n");		
         heap.reset();
         boolean[] processed = new boolean[nx*ny*nz];
         float[] sqdist = new float[nx*ny*nz];
@@ -335,7 +335,7 @@ public class BinaryTopology {
         		processed[xyz] = true;
 			}
         }
-		if (debug) BasicInfo.displayMessage("init\n");		
+		if (debug) System.out.print("init\n");		
 				
         // grow to the object boundary
 		while (heap.isNotEmpty()) {
@@ -369,7 +369,7 @@ public class BinaryTopology {
 		}
 		
 		
-		if (debug) BasicInfo.displayMessage("done\n");		
+		if (debug) System.out.print("done\n");		
 		
        return;
      }

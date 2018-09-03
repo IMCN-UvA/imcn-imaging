@@ -1,4 +1,4 @@
-package nl.uva.imcn.core.shape;
+package nl.uva.imcn.algorithms;
 
 import nl.uva.imcn.utilities.*;
 import nl.uva.imcn.structures.*;
@@ -12,7 +12,7 @@ import org.apache.commons.math3.util.FastMath;
 /*
  * @author Pierre-Louis Bazin
  */
-public class ShapeLevelsetFusion {
+public class LevelsetShapeFusion {
 
 	// data buffers
 	private float[][] lvlImages;
@@ -72,7 +72,7 @@ public class ShapeLevelsetFusion {
 		}
 		// optional: correct topology here
 		if (topoParam==true) {
-            ShapeTopologyCorrection2 topocorrect = new ShapeTopologyCorrection2();
+            FastMarchingTopologyCorrection topocorrect = new FastMarchingTopologyCorrection();
 		
             topocorrect.setDimensions(nx,ny,nz);
             topocorrect.setResolutions(rx,ry,rz);

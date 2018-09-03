@@ -141,7 +141,7 @@ public class BasicRigidRegistration {
 		boolean stop;
 		
         // one level
-        if (debug) BasicInfo.displayMessage("registration\n");
+        if (debug) System.out.print("registration\n");
         lambda = INIT_LAMBDA;
 		Nturn = 0; itPlus = 0; stop = false;
 		float E0 = computeRegistrationCoefficients(transform);
@@ -193,7 +193,7 @@ public class BasicRigidRegistration {
 				
 				lambda = lambda*lfactor;
 				stop = true;
-				if (verbose) BasicInfo.displayMessage("E = "+E+" ("+displayTransform(transform)+")\n");
+				if (verbose) System.out.print("E = "+E+" ("+displayTransform(transform)+")\n");
 			} 
 			else {
 				lambda = lambda/lfactor;

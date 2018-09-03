@@ -82,7 +82,7 @@ public class StatisticalUncertaintyReduction {
 			System.out.println(e.getMessage());
 			return;
 		}
-		if (debug) BasicInfo.displayMessage("initial probability decomposition\n");		
+		if (debug) System.out.print("initial probability decomposition\n");		
 		
 		// basic mask: remove two layers off the images (for avoiding limits)
 		for (int x=0; x<nix; x++) for (int y=0; y<niy; y++) for (int z = 0; z<niz; z++) {
@@ -301,11 +301,11 @@ public class StatisticalUncertaintyReduction {
 		// compute the functional factor
 		//float certaintyfactor = (float)(FastMath.log(0.5)/FastMath.log(factor));
 		float certaintyfactor = factor;
-		BasicInfo.displayMessage("certainty exponent "+certaintyfactor+"\n");
+		System.out.print("certainty exponent "+certaintyfactor+"\n");
 		
 		// rescale the certainty threshold so that it maps to the computed certainty values
 		mincertainty = certaintyFunction(mincertainty,certaintyfactor);
-		BasicInfo.displayMessage("minimum certainty threshold"+mincertainty+"\n");
+		System.out.print("minimum certainty threshold"+mincertainty+"\n");
 		
 		for (int x=1;x<nix-1;x++) for (int y=1;y<niy-1;y++) for (int z=1;z<niz-1;z++) {
 			int xyzi = x+nix*y+nix*niy*z;
@@ -336,7 +336,7 @@ public class StatisticalUncertaintyReduction {
 		float t0diff = 1.0f;
 		for (int t=0;t<iter && meandiff>diffratio*t0diff;t++) {
 		//for (int t=0;t<iter && maxdiff>0.1f;t++) {
-			BasicInfo.displayMessage("iter "+(t+1));
+			System.out.print("iter "+(t+1));
 			maxdiff = 0.0f;
 			meandiff = 0.0f;
 			float ndiff = 0.0f;
@@ -395,13 +395,13 @@ public class StatisticalUncertaintyReduction {
 				}
 				// for debug
 				for (int c=0;c<nc;c++) {
-					BasicInfo.displayMessage("\n contrast "+(c+1));
-					BasicInfo.displayMessage("\n mean |");
-					for (int n=0;n<nobj;n++) BasicInfo.displayMessage(objmean[n][c]+"| ");
-					BasicInfo.displayMessage("\n stdev |");
-					for (int n=0;n<nobj;n++) BasicInfo.displayMessage((float)FastMath.sqrt(objvar[n][c])+"| ");
-					BasicInfo.displayMessage("\n count |");
-					for (int n=0;n<nobj;n++) BasicInfo.displayMessage(objcount[n]+"| ");
+					System.out.print("\n contrast "+(c+1));
+					System.out.print("\n mean |");
+					for (int n=0;n<nobj;n++) System.out.print(objmean[n][c]+"| ");
+					System.out.print("\n stdev |");
+					for (int n=0;n<nobj;n++) System.out.print((float)FastMath.sqrt(objvar[n][c])+"| ");
+					System.out.print("\n count |");
+					for (int n=0;n<nobj;n++) System.out.print(objcount[n]+"| ");
 				}				
 				for (int xyzi=0;xyzi<nix*niy*niz;xyzi++) if (mask[xyzi]) {
 					for (int m=0;m<nbest;m++) {
@@ -453,8 +453,8 @@ public class StatisticalUncertaintyReduction {
 					}
 				}
 				
-				//BasicInfo.displayMessage("propagate gain for label "+n+"\n");
-				BasicInfo.displayMessage(".");
+				//System.out.print("propagate gain for label "+n+"\n");
+				System.out.print(".");
 
 				// get the gain ; normalize
 				for (int xyzi=0;xyzi<nix*niy*niz;xyzi++) if (mask[xyzi]) {
@@ -554,10 +554,10 @@ public class StatisticalUncertaintyReduction {
 					//if (stop) m=nbest;
 				}
 			}
-			BasicInfo.displayMessage("mean diff. "+meandiff+", max diff. "+maxdiff+", changed. "+nreseg+"\n");
-			//BasicInfo.displayMessage("n processed "+nproc+", n flipped "+nflip+"\n");
+			System.out.print("mean diff. "+meandiff+", max diff. "+maxdiff+", changed. "+nreseg+"\n");
+			//System.out.print("n processed "+nproc+", n flipped "+nflip+"\n");
 			
-			//BasicInfo.displayMessage("n resorted"+nresort+"\n");
+			//System.out.print("n resorted"+nresort+"\n");
 			
 		}
 		newproba = null;

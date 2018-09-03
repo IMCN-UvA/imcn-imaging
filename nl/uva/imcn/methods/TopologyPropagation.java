@@ -164,7 +164,7 @@ public class TopologyPropagation {
 				if (!lut.loadCompressedPattern()) {
 					finalize();
 					System.out.println("Problem loading the algorithm's LUT from: "+lut.getFilename());
-					BasicInfo.displayMessage("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
+					System.out.print("Problem loading the algorithm's LUT from: "+lut.getFilename()+"\n");
 				} else {
 					//if (debug) System.out.println("LUT loaded from: "+lut.getFilename());
 				}
@@ -188,7 +188,7 @@ public class TopologyPropagation {
 				}
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:initialisation\n");
+		if (debug) System.out.print("TP:initialisation\n");
 	}
 
 	public void finalize() {
@@ -445,7 +445,7 @@ public class TopologyPropagation {
 	 */
 	public final void initUpwardGeometricLabels() {
         int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+upLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+upLevel+"\n");
 
 		// init the labels from the threshold and up
 		for (int x=0;x<nx;x++) {
@@ -482,7 +482,7 @@ public class TopologyPropagation {
 	}//initLabels
 	public final void initDownwardGeometricLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+downLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+downLevel+"\n");
 
 		// init the labels from the threshold and up
 		for (int x=0;x<nx;x++) {
@@ -520,7 +520,7 @@ public class TopologyPropagation {
     
 	public final void initUpwardSmoothingLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+upLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+upLevel+"\n");
 
 		// init the labels from the threshold and up
 		for (int x=0;x<nx;x++) {
@@ -560,7 +560,7 @@ public class TopologyPropagation {
 	}//initLabels
 	public final void initUpwardSeedLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+upLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+upLevel+"\n");
 
 		// init the labels from seed points and up
         for (int n=0;n<inputSeed.length;n++) {
@@ -606,7 +606,7 @@ public class TopologyPropagation {
 	}//initLabels
 	public final void initUpwardPaintLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+upLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+upLevel+"\n");
 
 		// init the labels from the threshold and up
 		for (int x=0;x<nx;x++) {
@@ -647,7 +647,7 @@ public class TopologyPropagation {
     
 	public final void initDownwardSmoothingLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+downLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+downLevel+"\n");
 		
 		// init the labels from the threshold and up
 		for (int x=0;x<nx;x++) {
@@ -691,7 +691,7 @@ public class TopologyPropagation {
 	}//initLabels
 	public final void initDownwardSeedLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+downLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+downLevel+"\n");
 		
 		// init the labels from seed points and up
         for (int n=0;n<inputSeed.length;n++) {
@@ -741,7 +741,7 @@ public class TopologyPropagation {
 	}//initLabels
 	public final void initDownwardPaintLabels() {
 		int[] vec = new int[3];
-		if (debug) BasicInfo.displayMessage("TP:threshold "+downLevel+"\n");
+		if (debug) System.out.print("TP:threshold "+downLevel+"\n");
 		
 		// init the labels from the threshold and up
 		for (int x=0;x<nx;x++) {
@@ -800,13 +800,13 @@ public class TopologyPropagation {
 		int[] vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start upward geometric distance loop\n");
+		if (debug) System.out.print("TP:start upward geometric distance loop\n");
 		
 		boundary.reset();
 		boundary.setMinTree();
 		initUpwardGeometricLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -819,7 +819,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			x = boundary.getFirstIndex(0);
 			y = boundary.getFirstIndex(1);
@@ -869,7 +869,7 @@ public class TopologyPropagation {
                }
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -877,7 +877,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = val+1.0f;
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
 		return;
 	}//propagateUpwardGeometricDistance
@@ -898,13 +898,13 @@ public class TopologyPropagation {
 		int[] vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start downward geometric distance loop\n");
+		if (debug) System.out.print("TP:start downward geometric distance loop\n");
 		
 		boundary.reset();
 		boundary.setMaxTree();
 		initDownwardGeometricLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -917,7 +917,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			x = boundary.getFirstIndex(0);
 			y = boundary.getFirstIndex(1);
@@ -967,7 +967,7 @@ public class TopologyPropagation {
                }
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -975,7 +975,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = val-1.0f;
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
 		return;
 	}//propagateDownwardGeometricDistance
@@ -996,13 +996,13 @@ public class TopologyPropagation {
 		int[] vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start upward unconstrained distance loop\n");
+		if (debug) System.out.print("TP:start upward unconstrained distance loop\n");
 		
 		boundary.reset();
 		boundary.setMinTree();
 		initUpwardGeometricLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -1015,7 +1015,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			x = boundary.getFirstIndex(0);
 			y = boundary.getFirstIndex(1);
@@ -1066,7 +1066,7 @@ public class TopologyPropagation {
                }
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -1074,7 +1074,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = val+1.0f;
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
 		return;
 	}//propagateUpwardGeometricDistance
@@ -1095,13 +1095,13 @@ public class TopologyPropagation {
 		int[] vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start downward unconstrained distance loop\n");
+		if (debug) System.out.print("TP:start downward unconstrained distance loop\n");
 		
 		boundary.reset();
 		boundary.setMaxTree();
 		initDownwardGeometricLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -1114,7 +1114,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			x = boundary.getFirstIndex(0);
 			y = boundary.getFirstIndex(1);
@@ -1165,7 +1165,7 @@ public class TopologyPropagation {
                }
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -1173,7 +1173,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = val-1.0f;
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
 		return;
 	}//propagateDownwardGeometricDistance
@@ -1194,7 +1194,7 @@ public class TopologyPropagation {
 		int[] vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start upward exact distance loop\n");
+		if (debug) System.out.print("TP:start upward exact distance loop\n");
 		
 		boundary.reset();
 		boundary.setMinTree();
@@ -1202,7 +1202,7 @@ public class TopologyPropagation {
         else if (inputSkel.equals("paint mask")) initUpwardPaintLabels();
         else initUpwardSmoothingLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -1215,7 +1215,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			
 			// get the next value
 			x = boundary.getFirstIndex(0);
@@ -1271,7 +1271,7 @@ public class TopologyPropagation {
 				}
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -1279,7 +1279,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = val;
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
  		return;
 	}//propagateUpwardExactSmoothing
@@ -1301,7 +1301,7 @@ public class TopologyPropagation {
 		boolean		isCritical;
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start downward exact distance loop\n");
+		if (debug) System.out.print("TP:start downward exact distance loop\n");
 		
 		boundary.reset();
 		boundary.setMaxTree();
@@ -1309,7 +1309,7 @@ public class TopologyPropagation {
         else if (inputSkel.equals("paint mask")) initDownwardPaintLabels();
         else initDownwardSmoothingLabels();
 		
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -1322,7 +1322,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			val = boundary.getFirst();
 			x = boundary.getFirstIndex(0);
@@ -1373,7 +1373,7 @@ public class TopologyPropagation {
 				}				
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		int xb=0,yb=0,zb=0;
 		float best = val;
@@ -1383,7 +1383,7 @@ public class TopologyPropagation {
 				else dist[x][y][z] = val;
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
 		return;
 	}//propagateDownwardExactSmoothing
@@ -1428,7 +1428,7 @@ public class TopologyPropagation {
 		int[] vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start upward approx distance loop\n");
+		if (debug) System.out.print("TP:start upward approx distance loop\n");
 		
 		boundary.reset();
 		boundary.setMinTree();
@@ -1436,7 +1436,7 @@ public class TopologyPropagation {
         else if (inputSkel.equals("paint mask")) initUpwardPaintLabels();
         else initUpwardSmoothingLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -1449,7 +1449,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			x = boundary.getFirstIndex(0);
 			y = boundary.getFirstIndex(1);
@@ -1500,7 +1500,7 @@ public class TopologyPropagation {
 				}
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -1508,7 +1508,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = Math.min(image[x][y][z]+maxDistance,val);
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
  		return;
 	}//propagateUpwardApproxSmoothing
@@ -1529,7 +1529,7 @@ public class TopologyPropagation {
         int[]       vec = new int[3];
 		
 		// init: reset the boundary tree, the labels
-		if (debug) BasicInfo.displayMessage("TP:start downward approx distance loop\n");
+		if (debug) System.out.print("TP:start downward approx distance loop\n");
 		
 		boundary.reset();
 		boundary.setMaxTree();
@@ -1537,7 +1537,7 @@ public class TopologyPropagation {
         else if (inputSkel.equals("paint mask")) initDownwardPaintLabels();
         else initDownwardSmoothingLabels();
 
-		if (debug) BasicInfo.displayMessage("TP:labels initialized\n");
+		if (debug) System.out.print("TP:labels initialized\n");
 		
 		int tmax = (nx-2)*(ny-2)*(nz-2);
 		int mod = tmax/100;
@@ -1549,7 +1549,7 @@ public class TopologyPropagation {
 		while (boundary.isNotEmpty()) {
 			t++;
 
-			if ( (debug) && (t%10000==0)) BasicInfo.displayMessage(".");
+			if ( (debug) && (t%10000==0)) System.out.print(".");
 			// get the next value
 			x = boundary.getFirstIndex(0);
 			y = boundary.getFirstIndex(1);
@@ -1599,7 +1599,7 @@ public class TopologyPropagation {
 				}
             }
 		}
-		if (debug) BasicInfo.displayMessage("TP:critical points\n");
+		if (debug) System.out.print("TP:critical points\n");
 
 		// set the critical points
 		for (x=1;x<nx-1;x++) for (y=1;y<ny-1;y++) for (z=1;z<nz-1;z++) {
@@ -1609,7 +1609,7 @@ public class TopologyPropagation {
 				dist[x][y][z] = image[x][y][z];
 			}
 		}
-		if (debug) BasicInfo.displayMessage("TP:end loop\n");
+		if (debug) System.out.print("TP:end loop\n");
 
 		return;
 	}//propagateDownwardApproxSmoothing

@@ -3,10 +3,6 @@ package nl.uva.imcn.methods;
 import java.io.*;
 import java.util.*;
 
-import gov.nih.mipav.view.*;
-import gov.nih.mipav.model.structures.jama.*;
-import gov.nih.mipav.model.file.FileInfoBase;
-
 import org.apache.commons.math3.distribution.TDistribution;
 import org.apache.commons.math3.util.FastMath;
 

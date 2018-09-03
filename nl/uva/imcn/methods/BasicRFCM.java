@@ -87,7 +87,7 @@ public class BasicRFCM {
 
 		smoothing *= (Imax-Imin);
 		
-		if (debug) BasicInfo.displayMessage("FCM:initialisation\n");
+		if (debug) System.out.print("FCM:initialisation\n");
 	}
 
 	/** clean-up: destroy membership and centroid arrays */
@@ -106,9 +106,9 @@ public class BasicRFCM {
 	final public void setCentroids(float[] cent) { 
 		centroids = cent; 
 		if (debug) {
-			BasicInfo.displayMessage("centroids: ("+centroids[0]);
-			for (int k=1;k<classes;k++) BasicInfo.displayMessage(", "+centroids[k]);
-			BasicInfo.displayMessage(")\n");
+			System.out.print("centroids: ("+centroids[0]);
+			for (int k=1;k<classes;k++) System.out.print(", "+centroids[k]);
+			System.out.print(")\n");
 		}
 
 	}
@@ -219,9 +219,9 @@ public class BasicRFCM {
 			}
         }
         if (verbose) {
-			BasicInfo.displayMessage("centroids: ("+centroids[0]);
-			for (k=1;k<classes;k++) BasicInfo.displayMessage(", "+centroids[k]);
-			BasicInfo.displayMessage(")\n");
+			System.out.print("centroids: ("+centroids[0]);
+			for (k=1;k<classes;k++) System.out.print(", "+centroids[k]);
+			System.out.print(")\n");
 		}   
         return;
     } // computeCentroids
