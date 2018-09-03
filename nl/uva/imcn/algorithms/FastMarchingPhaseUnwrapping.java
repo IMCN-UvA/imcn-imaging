@@ -85,17 +85,17 @@ public class FastMarchingPhaseUnwrapping {
 	
 	
 	// to be used for JIST definitions, generic info / help
-	public final String getPackage() { return "CBS Tools"; }
-	public final String getCategory() { return "Intensity.devel"; }
+	public final String getPackage() { return "IMCN Toolkit"; }
+	public final String getCategory() { return "Intensity"; }
 	public final String getLabel() { return "Fast Marching Unwrapping"; }
 	public final String getName() { return "FastMarchingUnwrapping"; }
 
 	public final String[] getAlgorithmAuthors() { return new String[]{"Pierre-Louis Bazin"}; }
-	public final String getAffiliation() { return "Max Planck Institute for Human Cognitive and Brain Sciences"; }
+	public final String getAffiliation() { return "Integrated Model-based Cognitive Neuroscience Reseaerch Unit, Universiteit van Amsterdam"; }
 	public final String getDescription() { return "Fast marching method for unwrapping phase images, based on (Abdul-Rahman et al., 2005)"; }
 	public final String getLongDescription() { return getDescription(); }
 		
-	public final String getVersion() { return "3.1.3"; };
+	public final String getVersion() { return "1.0"; };
 
 	// create outputs
 	public final float[] getCorrectedImage() { return correctImage; }
@@ -338,8 +338,10 @@ public class FastMarchingPhaseUnwrapping {
         } else {
             correctImage = phase;
         }
-        // rescale into original values
-        for (int xyz=0;xyz<nxyz;xyz++) correctImage[xyz] = Pmin + correctImage[xyz]*(Pmax-Pmin);
+        // rescale into original values: no, as it looses the angular metric
+        //for (int xyz=0;xyz<nxyz;xyz++) correctImage[xyz] = Pmin + correctImage[xyz]*(Pmax-Pmin);
+        //rescale in radians instead
+        for (int xyz=0;xyz<nxyz;xyz++) correctImage[xyz] = correctImage[xyz]*(float)(2.0*FastMath.PI);
         
 		// output
 		scoreImage = reliability;
