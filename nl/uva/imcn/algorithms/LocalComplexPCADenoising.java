@@ -28,6 +28,7 @@ public class LocalComplexPCADenoising {
 	private     int         ngbSize = 5;
 	private     int         winSize = -1;
 	private     boolean     unwrap = true;
+	private     boolean     eigen = false;
 	//private     boolean     tvmag = false;
 	//private     boolean     tvphs = false;
 	
@@ -173,7 +174,7 @@ public class LocalComplexPCADenoising {
 	    }
 	    return out;
 	}
-
+	*/
 	public float[] getEigenvectorImage() {
 	    float[] out = new float[2*nimg*nxyz];
 	    for (int i=0;i<2*nimg;i++) for (int xyz=0;xyz<nxyz;xyz++) {
@@ -189,7 +190,6 @@ public class LocalComplexPCADenoising {
 	    }
 	    return out;
 	}
-	*/
 	
 	public void execute() {
 	    if (invphs==null) executeMagnitudeDenoising();
@@ -277,8 +277,13 @@ public class LocalComplexPCADenoising {
 		if (timeWindow) System.out.print("time steps: "+nsample+" (over "+nimg+" time points)\n");
 		 
 		denoised = new float[nimg2][nxyz];
-		//eigvec = new float[nimg2][nxyz];
-		//eigval = new float[nimg2][nxyz];
+		if (eigen) {
+            eigvec = new float[nimg2][nxyz];
+            eigval = new float[nimg2][nxyz];
+        } else {
+            eigvec = null;
+            eigval = null;
+        }
 		float[][] weights = new float[nimg][nxyz];
 		pcadim = new float[nimg][nxyz];
 		errmap = new float[nimg][nxyz];
@@ -417,8 +422,10 @@ public class LocalComplexPCADenoising {
                         for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
                             for (int i=0;i<ntime2;i++) {
                                 denoised[2*t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*patch[dx+ngbx*dy+ngbx*ngby*dz][i]);
-                                //eigval[2*t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
-                                //eigvec[2*t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
+                                if (eigen) {
+                                    eigval[2*t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
+                                    eigvec[2*t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
+                                }
                             }
                             for (int i=0;i<ntime;i++) {
                                 weights[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
@@ -436,8 +443,10 @@ public class LocalComplexPCADenoising {
             for (int i=0;i<nimg2;i++) {
                 int t = Numerics.floor(i/2.0f);
                 denoised[i][xyz] /= weights[t][xyz];
-                //eigval[i][xyz] /= weights[t][xyz];
-                //eigvec[i][xyz] /= weights[t][xyz];
+                if (eigen) {
+                    eigval[i][xyz] /= weights[t][xyz];
+                    eigvec[i][xyz] /= weights[t][xyz];
+                }
             }
             for (int i=0;i<nimg;i++) {
                 pcadim[i][xyz] /= weights[i][xyz];
@@ -516,8 +525,13 @@ public class LocalComplexPCADenoising {
 		if (timeWindow) System.out.print("time steps: "+nsample+" (over "+nimg+" time points)\n");
 		 
 		denoised = new float[nimg][nxyz];
-		//eigvec = new float[nimg][nxyz];
-		//eigval = new float[nimg][nxyz];
+		if (eigen) { 
+		    eigvec = new float[nimg][nxyz];
+		    eigval = new float[nimg][nxyz];
+		} else {
+		    eigvec = null;
+		    eigval = null;
+		}
 		float[][] weights = new float[nimg][nxyz];
 		pcadim = new float[nimg][nxyz];
 		errmap = new float[nimg][nxyz];
@@ -657,15 +671,14 @@ public class LocalComplexPCADenoising {
                         for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
                             for (int i=0;i<ntime;i++) {
                                 denoised[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*patch[dx+ngbx*dy+ngbx*ngby*dz][i]);
-                                //eigval[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
-                                //eigvec[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
+                                if (eigen) {
+                                    eigval[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
+                                    eigvec[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
+                                }
                                 weights[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
                                 pcadim[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*(ntime-nzero));
                                 errmap[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*rsquare);
                             }
-                            //weights[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
-                            //pcadim[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*(ntime-nzero));
-                            //errmap[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*rsquare);
                         }
                     }
                 }
@@ -676,8 +689,10 @@ public class LocalComplexPCADenoising {
             double err = 0.0;
             for (int i=0;i<nimg;i++) {
                 denoised[i][xyz] /= weights[i][xyz];
-                //eigval[i][xyz] /= weights[i][xyz];
-                //eigvec[i][xyz] /= weights[i][xyz];
+                if (eigen) {
+                    eigval[i][xyz] /= weights[i][xyz];
+                    eigvec[i][xyz] /= weights[i][xyz];
+                }
                 pcadim[i][xyz] /= weights[i][xyz];
                 errmap[i][xyz] /= weights[i][xyz];
             }
