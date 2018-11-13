@@ -45,6 +45,7 @@ public class LocalComplexPCADenoising {
 	private float[][] eigval;
 	private	float[][] pcadim;
 	private	float[][] errmap;
+	// TODO: add original noise level estimation (from the slope)
 	
 	// set inputs
 	public final void setMagnitudeImages(float[] in)  {
