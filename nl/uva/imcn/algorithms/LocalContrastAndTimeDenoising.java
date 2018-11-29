@@ -138,7 +138,7 @@ public class LocalContrastAndTimeDenoising {
                     int ngbz = Numerics.min(ngb, nz-z);
                     int ngb3 = ngbx*ngby*ngbz;
                     boolean process = false;
-                    if (ngb3<ntime) {
+                    if (ngb3<ntime*nc) {
                         System.out.print("!patch is too small!\n");
                         process = false;
                     } else {
