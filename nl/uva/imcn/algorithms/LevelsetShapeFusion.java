@@ -44,17 +44,17 @@ public class LevelsetShapeFusion {
 	public final void setResolutions(float[] res) { rx=res[0]; ry=res[1]; rz=res[2]; }
 	
 	// to be used for JIST definitions, generic info / help
-	public final String getPackage() { return "CBS Tools"; }
-	public final String getCategory() { return "Shape.devel"; }
+	public final String getPackage() { return "IMCN Toolkit"; }
+	public final String getCategory() { return "Shape"; }
 	public final String getLabel() { return "Levelset Fusion"; }
 	public final String getName() { return "LevelsetFusion"; }
 
 	public final String[] getAlgorithmAuthors() { return new String[]{"Pierre-Louis Bazin"}; }
-	public final String getAffiliation() { return "Max Planck Institute for Human Cognitive and Brain Sciences"; }
+	public final String getAffiliation() { return "Integrative Model-basec Cognitve Neuroscience unit, Universiteit van Amsterdam | Max Planck Institute for Human Cognitive and Brain Sciences"; }
 	public final String getDescription() { return "Combines a collection of levelset surfaces into an average with average volume and spherical topology"; }
 	public final String getLongDescription() { return getDescription(); }
 		
-	public final String getVersion() { return "3.1.3"; };
+	public final String getVersion() { return "1.0"; };
 
 	// create outputs
 	public final float[] getLevelsetAverage() { return meanImage; }

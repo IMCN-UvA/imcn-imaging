@@ -514,7 +514,7 @@ public class OctreeMultiClusterSimplification {
 				v7 = (sqd[level][xyz7][t] + clustersize*sigma2[t])/(npt[level][xyz7] + clustersize);
 				v8 = (sqd[level][xyz8][t] + clustersize*sigma2[t])/(npt[level][xyz8] + clustersize);
 			} else if (varupdate==VARZERO) {
-				// weaker priors: go down with number of samples
+				// weakest priors: use prior only if there is no data
 				if (sqd[level][xyz1][t]==0) v1 = sigma2[t]; else v1 = sqd[level][xyz1][t]/npt[level][xyz1];
 				if (sqd[level][xyz2][t]==0) v2 = sigma2[t]; else v2 = sqd[level][xyz2][t]/npt[level][xyz2];
 				if (sqd[level][xyz3][t]==0) v3 = sigma2[t]; else v3 = sqd[level][xyz3][t]/npt[level][xyz3];
@@ -524,7 +524,7 @@ public class OctreeMultiClusterSimplification {
 				if (sqd[level][xyz7][t]==0) v7 = sigma2[t]; else v7 = sqd[level][xyz7][t]/npt[level][xyz7];
 				if (sqd[level][xyz8][t]==0) v8 = sigma2[t]; else v8 = sqd[level][xyz8][t]/npt[level][xyz8];
 			} else if (varupdate==VARCONST) {
-				// weaker priors: go down with number of samples
+				// constant priors: stay at given value
 				v1 = sigma2[t];
 				v2 = sigma2[t];
 				v3 = sigma2[t];
