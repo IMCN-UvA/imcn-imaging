@@ -89,23 +89,31 @@ public class ConditionalShapeSegmentation {
 	    if (modelBackground) {
             // adding the background: building a ring around the structures of interest
             // with also a sharp decay to the boundary
-            levelsets = new float[nsub][nobj+1][nxyz];
-            for (int sub=0;sub<nsub;sub++) for (int xyz=0;xyz<nxyz;xyz++) {
-                float mindist = boundary;
-                for (int obj=0;obj<nobj;obj++) {
-                    if (lvlImages[sub][obj][xyz]<mindist) mindist = lvlImages[sub][obj][xyz];
+            levelsets = new float[nsub][nobj+1][];
+            float[] background = new float[nxyz];
+            boolean[] bgmask = new boolean[nxyz];
+            for (int xyz=0;xyz<nxyz;xyz++) bgmask[xyz] = true;
+ 
+            for (int sub=0;sub<nsub;sub++) {
+                for (int xyz=0;xyz<nxyz;xyz++) {
+                    float mindist = boundary;
+                    for (int obj=0;obj<nobj;obj++) {
+                        if (lvlImages[sub][obj][xyz]<mindist) mindist = lvlImages[sub][obj][xyz];
+                    }
+                    if (mindist<boundary/2.0) {
+                        background[xyz] = -mindist;
+                    } else {
+                        background[xyz] = -boundary/2.0f + (mindist-boundary/2.0f);
+                    }
                 }
-                if (mindist<boundary/2.0) {
-                    levelsets[sub][0][xyz] = -mindist;
-                } else {
-                   levelsets[sub][0][xyz] = -boundary/2.0f + 3.0f*(mindist-boundary/2.0f);
-                }
+                InflateGdm gdm = new InflateGdm(background, nx, ny, nz, rx, ry, rz, bgmask, 0.4f, 0.4f, "no", null);
+                gdm.evolveNarrowBand(0, 1.0f);
+                levelsets[sub][0] = gdm.getLevelSet();
                 for (int obj=0;obj<nobj;obj++) {
-                    levelsets[sub][obj+1][xyz] = lvlImages[sub][obj][xyz];
+                    levelsets[sub][obj+1] = lvlImages[sub][obj];
                 }
             }
             nobj = nobj+1;
-            lvlImages = null;
         } else {
             levelsets = lvlImages;
 		}
