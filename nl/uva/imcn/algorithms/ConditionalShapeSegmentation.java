@@ -24,9 +24,9 @@ public class ConditionalShapeSegmentation {
 	private int nsub;
 	private int nobj;
 	private int nc;
-	private int nbest = 5;
+	private int nbest = 8;
 	
-	private float deltaIn = 1.0f;
+	private float deltaIn = 2.0f;
 	private float deltaOut = 0.0f;
 	private float boundary = 10.0f;
 	private boolean modelBackground = true;
@@ -134,37 +134,63 @@ public class ConditionalShapeSegmentation {
         }
         System.out.println("masking: compress to "+(ndata/(float)nxyz));
 		
+        // adapt number of kept values?
+        
 		System.out.println("compute joint conditional shape priors");
 		float[][] probas = new float[nbest][ndata]; 
 		int[][] labels = new int[nbest][ndata];
 		
+		int ctr = Numerics.floor(nsub/2);
+        int dev = Numerics.floor(nsub/4);
+                    
 		double[] val = new double[nsub];
 		int id=0;
+		double sum=0, den=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    double[][] priors = new double[nobj][nobj];
             for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                 // median and iqr
                 for (int sub=0;sub<nsub;sub++) {
                     val[sub] = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
+                    val[sub] = Numerics.max(val[sub], 0.0);
 		        }
+		        // problem when dealing with few samples??
+		        /*
 		        Percentile measure = new Percentile();
                 measure.setData(val);
 			
-                double med = Numerics.max(measure.evaluate(50.0), 0.0); 
+                double med = measure.evaluate(50.0); 
                 double iqr = measure.evaluate(75.0) - measure.evaluate(25.0);
+                */
+                Numerics.sort(val);
+                double med, iqr;
+                if (nsub%2==0) {
+                    med = 0.5*(val[ctr-1]+val[ctr]);
+                    iqr = val[ctr+dev] - val[ctr-1-dev];
+                } else {
+                    med = val[ctr];
+                    iqr = val[ctr+dev] - val[ctr-dev];
+                }                   
+                
+                sum += iqr;
+                den++;
 				// IQR = 1.349*sigma
 				// pb: shouldn't we scale by 1/sqrt 2pi sigma ?? 
 				// otherwise more variable regions are preferred
 				
-				// arbitrary floor of iqr to 1 voxel
-				iqr = Numerics.max(iqr, 1.0);
-				
 				// for debug only
 				//med = Numerics.max(0.5*(val[0]+val[1]),0.0);
 				//iqr = Numerics.abs(0.5*(val[0]-val[1]));
-				//iqr = 1.0;
+				
+				// arbitrary floor of iqr to 1 voxel
+				//iqr = Numerics.max(iqr, 1.0);
+				
+				// iqr is too variable at the voxel level: keep it constant at first
+				// then re-estimate it at the object|object level
+				iqr = Numerics.max(iqr, 0.5);
 				
 				priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)*FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
+				//priors[obj1][obj2] = FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
 			}
             for (int best=0;best<nbest;best++) {
                 int best1=0;
@@ -184,6 +210,7 @@ public class ConditionalShapeSegmentation {
  		    }
  		    id++;
 		}
+		System.out.println("mean iqr: "+(sum/den));
 		// levelsets are now discarded...
 		levelsets = null;
 		

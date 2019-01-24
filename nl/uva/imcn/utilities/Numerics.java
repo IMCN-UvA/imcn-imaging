@@ -543,6 +543,19 @@ public class Numerics {
 		}
 	}
 			
+	public static final void sort(double[] val) {
+		for (int n=0;n<val.length;n++) {
+			for (int m=n+1;m<val.length;m++) {
+				if (val[m]<val[n]) {
+					// switch place
+					double tmp = val[n];
+					val[n] = val[m];
+					val[m] = tmp;
+				}
+			}
+		}
+	}
+			
 	public static final void sortmag(float[] val, int size) {
 		for (int n=0;n<size;n++) {
 			for (int m=n+1;m<size;m++) {
