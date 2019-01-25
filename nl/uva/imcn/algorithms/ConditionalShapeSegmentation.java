@@ -47,9 +47,15 @@ public class ConditionalShapeSegmentation {
 	    intensImages = new float[nsub][nc][];
 	    targetImages = new float[nc][];
 	}
-	public final void setLevelsetImageAt(int sub, int obj, float[] val) { lvlImages[sub][obj] = val; }
-	public final void setContrastImageAt(int sub, int cnt, float[] val) { intensImages[sub][cnt] = val; }
-	public final void setTargetImageAt(int cnt, float[] val) { targetImages[cnt] = val; }
+	public final void setLevelsetImageAt(int sub, int obj, float[] val) { lvlImages[sub][obj] = val; 
+	    System.out.println("levelset ("+sub+", "+obj+") = "+lvlImages[sub][obj][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	}
+	public final void setContrastImageAt(int sub, int cnt, float[] val) { intensImages[sub][cnt] = val; 
+	    System.out.println("contrast ("+sub+", "+cnt+") = "+intensImages[sub][cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	}
+	public final void setTargetImageAt(int cnt, float[] val) { targetImages[cnt] = val; 
+	    System.out.println("target ("+cnt+") = "+targetImages[cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	}
 	
 	//public static final void setFollowSkeleton(boolean val) { skelParam=val; }
 	//public final void setCorrectSkeletonTopology(boolean val) { topoParam=val; }
@@ -145,7 +151,7 @@ public class ConditionalShapeSegmentation {
                     
 		double[] val = new double[nsub];
 		int id=0;
-		double sum=0, den=0;
+		double iqrsum=0, iqrden=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    double[][] priors = new double[nobj][nobj];
             for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
@@ -171,9 +177,8 @@ public class ConditionalShapeSegmentation {
                     med = val[ctr];
                     iqr = val[ctr+dev] - val[ctr-dev];
                 }                   
-                
-                sum += iqr;
-                den++;
+                iqrsum += iqr;
+                iqrden++;
 				// IQR = 1.349*sigma
 				// pb: shouldn't we scale by 1/sqrt 2pi sigma ?? 
 				// otherwise more variable regions are preferred
@@ -210,11 +215,10 @@ public class ConditionalShapeSegmentation {
  		    }
  		    id++;
 		}
-		System.out.println("mean iqr: "+(sum/den));
+		System.out.println("mean spatial iqr: "+(iqrsum/iqrden));
 		// levelsets are now discarded...
 		levelsets = null;
 		
-		/* skip for now
 		System.out.println("compute joint conditional intensity priors");
 		
 		float[][][] contrasts = intensImages;
@@ -222,12 +226,15 @@ public class ConditionalShapeSegmentation {
 		float[][] iqrc = new float[nc][ndata];
 		
 		System.out.println("1. estimate subjects distribution");
+		double[] cntsum = new double[nc];
+		double[] cntden = new double[nc];
 		id = 0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int c=0;c<nc;c++) {
                 for  (int sub=0;sub<nsub;sub++) {
                     val[sub] = contrasts[sub][c][xyz];
                 }
+                /*
                 //System.out.println("values");
                 Percentile measure = new Percentile();
                 measure.setData(val);
@@ -236,79 +243,112 @@ public class ConditionalShapeSegmentation {
                 //System.out.println("median "+medc[c][id]);
                 iqrc[c][id] = (float)(measure.evaluate(75.0) - measure.evaluate(25.0));
                 //System.out.println("iqr "+iqrc[c][id]);
+                */
+                Numerics.sort(val);
+                double med, iqr;
+                if (nsub%2==0) {
+                    med = 0.5*(val[ctr-1]+val[ctr]);
+                    iqr = val[ctr+dev] - val[ctr-1-dev];
+                } else {
+                    med = val[ctr];
+                    iqr = val[ctr+dev] - val[ctr-dev];
+                }                   
+                medc[c][id] = (float)med;
+                iqrc[c][id] = (float)iqr;
+                
+                cntsum[c] += iqr;
+                cntden[c]++;
             }
             id++;
         }
-        
-        System.out.println("2. compute conditional maps");
+        for (int c=0;c<nc;c++) {
+            System.out.println("mean iqr (contrast "+c+"): "+(cntsum[c]/cntden[c]));
+		}
+		
+		System.out.println("2. compute conditional maps");
 		
 		// use spatial priors and subject variability priors to define conditional intensity
 		// mean and stdev
 		double[][][] condmean = new double[nc][nobj][nobj];
 		double[][][] condstdv = new double[nc][nobj][nobj];
-		for (int c=0;c<nc;c++) {
-		   for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+		for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+		    System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
+		    for (int c=0;c<nc;c++) {
 		       
-		       System.out.print("("+obj1+" | "+obj2+")");
 		       // System.out.println("..mean");
 		       double sum = 0.0;
 		       double den = 0.0;
 		       id = 0;
 		       for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		           // look for non-zero priors
-		           for (int best=0;best<nbest;best++) {
-		               if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
-		                   // found value: proceeed
-		                   for (int sub=0;sub<nsub;sub++) {
-		                       double med = medc[c][id];
-		                       double iqr = iqrc[c][id];
-		                       double psub = 0.0;
-		                       // assuming here that iqr==0 means masked regions
-		                       if (iqr>0) psub = probas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-		                                          *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-		                       // add to the mean
-		                       sum += psub*contrasts[sub][c][xyz];
-		                       den += psub;
-		                   }
-		                   best=nbest;
-		               }
+                   double med = medc[c][id];
+                   double iqr = iqrc[c][id];
+                   // assuming here that iqr==0 means masked regions
+                   if (iqr>0) { 
+                       // look for non-zero priors
+                       for (int best=0;best<nbest;best++) {
+                           if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
+                               // found value: proceeed
+                               for (int sub=0;sub<nsub;sub++) {
+                                   double psub = probas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                      *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                   // add to the mean
+                                   sum += psub*contrasts[sub][c][xyz];
+                                   den += psub;
+                               }
+                               best=nbest;
+                           }
+                       }
 		           }
 		           id++;
 		       }
 		       // build average
-		       condmean[c][obj1][obj2] = sum/den;
-		       
+		       if (den>0) {
+                   condmean[c][obj1][obj2] = sum/den;
+		       } else {
+		           System.out.print("empty pair        ");
+		           condmean[c][obj1][obj2] = 0.0;
+		       }
 		       //System.out.println("..stdev");
 		       double var = 0.0;
 		       id = 0;
 		       for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		           // look for non-zero priors
-		           for (int best=0;best<nbest;best++) {
-		               if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
-		                   // found value: proceeed
-		                   for (int sub=0;sub<nsub;sub++) {
-		                       double med = medc[c][id];
-		                       double iqr = iqrc[c][id];
-		                       double psub = 0.0;
-		                        // assuming here that iqr==0 means masked regions
-		                       if (iqr>0) psub = probas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-		                                           *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-		                       // add to the mean
-		                       var += psub*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2])*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2]);
-		                   }
-		                   best=nbest;
-		               }
-		           }
+                   double med = medc[c][id];
+                   double iqr = iqrc[c][id];
+                   // assuming here that iqr==0 means masked regions
+                   if (iqr>0) { 
+                       // look for non-zero priors
+                       for (int best=0;best<nbest;best++) {
+                           if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
+                               // found value: proceeed
+                               for (int sub=0;sub<nsub;sub++) {
+                                   double psub = probas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                   // add to the mean
+                                   var += psub*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2])*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2]);
+                               }
+                               best=nbest;
+                           }
+                       }
+                   }
 		           id++;
 		       }
 		       // build stdev
-		       condstdv[c][obj1][obj2] = FastMath.sqrt(var/den);
-		       if (var==0) System.out.println("empty region");
-		   }
+		       if (var==0) {
+		           System.out.print("empty region        ");
+		           condstdv[c][obj1][obj2] = 0;
+		       } else if (den>0) {
+		           condstdv[c][obj1][obj2] = FastMath.sqrt(var/den);
+		           System.out.print(condmean[c][obj1][obj2]+" +/- "+condstdv[c][obj1][obj2]+"    ");
+		       
+                } else {
+                   System.out.print("empty pair        ");
+		           condstdv[c][obj1][obj2] = 0;
+		       } 
+		    }
 		}
 		// at this point the atlas data is not used anymore
 		contrasts = null;
-		System.out.println("done");
+		System.out.println("\ndone");
           
         System.out.println("apply priors to target");
         
@@ -323,7 +363,9 @@ public class ConditionalShapeSegmentation {
            
                for (int best=0;best<nbest;best++) {
                    if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
-                       posteriors[obj1][obj2] = probas[best][id];
+                       // multiply nc times to balance prior and posterior
+                       posteriors[obj1][obj2] = 1.0;
+                       for (int c=0;c<nc;c++) posteriors[obj1][obj2] *= probas[best][id];
                    }
                }
                if (posteriors[obj1][obj2]>0) {
@@ -360,7 +402,7 @@ public class ConditionalShapeSegmentation {
 		}
 		// rebuild output
 		target = null;
-		*/
+		
 		probaImages = new float[nbest*nxyz];
 		labelImages = new int[nbest*nxyz];
 		id=0;
