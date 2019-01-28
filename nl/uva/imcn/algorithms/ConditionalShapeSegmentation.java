@@ -28,8 +28,12 @@ public class ConditionalShapeSegmentation {
 	
 	private float deltaIn = 2.0f;
 	private float deltaOut = 0.0f;
-	private float boundary = 10.0f;
+	private float boundary = 5.0f;
 	private boolean modelBackground = true;
+	private boolean cancelBackground = true;
+	private boolean cancelAll = false;
+	private boolean sumPosterior = false;
+	private boolean maxPosterior = false;
 	//private boolean topoParam = true;
 	//private     String	            lutdir = null;
 	
@@ -62,6 +66,14 @@ public class ConditionalShapeSegmentation {
 	}
 	public final void setTargetImageAt(int cnt, float[] val) { targetImages[cnt] = val; 
 	    System.out.println("target ("+cnt+") = "+targetImages[cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	}
+	
+	public final void setOptions(boolean mB, boolean cB, boolean cA, boolean sP, boolean mP) {
+	    modelBackground = mB;
+	    cancelBackground = cB;
+	    cancelAll = cA;
+	    sumPosterior = sP;
+	    maxPosterior = mP;
 	}
 	
 	//public static final void setFollowSkeleton(boolean val) { skelParam=val; }
@@ -162,47 +174,54 @@ public class ConditionalShapeSegmentation {
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    double[][] priors = new double[nobj][nobj];
             for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                // median and iqr
-                for (int sub=0;sub<nsub;sub++) {
-                    val[sub] = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
-                    val[sub] = Numerics.max(val[sub], 0.0);
-		        }
-		        // problem when dealing with few samples??
-		        /*
-		        Percentile measure = new Percentile();
-                measure.setData(val);
-			
-                double med = measure.evaluate(50.0); 
-                double iqr = measure.evaluate(75.0) - measure.evaluate(25.0);
-                */
-                Numerics.sort(val);
-                double med, iqr;
-                if (nsub%2==0) {
-                    med = 0.5*(val[ctr-1]+val[ctr]);
-                    iqr = val[ctr+dev] - val[ctr-1-dev];
+                // cancelling self-structures?
+                if (cancelBackground && obj1==0 && obj2==0) {
+                    priors[obj1][obj2] = 0.0;
+                } else if (cancelAll && obj1==obj2) {
+                    priors[obj1][obj2] = 0.0;
                 } else {
-                    med = val[ctr];
-                    iqr = val[ctr+dev] - val[ctr-dev];
-                }                   
-                iqrsum += iqr;
-                iqrden++;
-				// IQR = 1.349*sigma
-				// pb: shouldn't we scale by 1/sqrt 2pi sigma ?? 
-				// otherwise more variable regions are preferred
-				
-				// for debug only
-				//med = Numerics.max(0.5*(val[0]+val[1]),0.0);
-				//iqr = Numerics.abs(0.5*(val[0]-val[1]));
-				
-				// arbitrary floor of iqr to 1 voxel
-				//iqr = Numerics.max(iqr, 1.0);
-				
-				// iqr is too variable at the voxel level: keep it constant at first
-				// then re-estimate it at the object|object level
-				iqr = Numerics.max(iqr, 0.5);
-				
-				priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)*FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
-				//priors[obj1][obj2] = FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
+                    // median and iqr
+                    for (int sub=0;sub<nsub;sub++) {
+                        val[sub] = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
+                        val[sub] = Numerics.max(val[sub], 0.0);
+                    }
+                    // problem when dealing with few samples??
+                    /*
+                    Percentile measure = new Percentile();
+                    measure.setData(val);
+                
+                    double med = measure.evaluate(50.0); 
+                    double iqr = measure.evaluate(75.0) - measure.evaluate(25.0);
+                    */
+                    Numerics.sort(val);
+                    double med, iqr;
+                    if (nsub%2==0) {
+                        med = 0.5*(val[ctr-1]+val[ctr]);
+                        iqr = val[ctr+dev] - val[ctr-1-dev];
+                    } else {
+                        med = val[ctr];
+                        iqr = val[ctr+dev] - val[ctr-dev];
+                    }                   
+                    iqrsum += iqr;
+                    iqrden++;
+                    // IQR = 1.349*sigma
+                    // pb: shouldn't we scale by 1/sqrt 2pi sigma ?? 
+                    // otherwise more variable regions are preferred
+                    
+                    // for debug only
+                    //med = Numerics.max(0.5*(val[0]+val[1]),0.0);
+                    //iqr = Numerics.abs(0.5*(val[0]-val[1]));
+                    
+                    // arbitrary floor of iqr to 1 voxel
+                    //iqr = Numerics.max(iqr, 1.0);
+                    
+                    // iqr is too variable at the voxel level: keep it constant at first
+                    // then re-estimate it at the object|object level
+                    iqr = Numerics.max(iqr, 0.5);
+                    
+                    priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)*FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
+                    //priors[obj1][obj2] = FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
+                }
 			}
             for (int best=0;best<nbest;best++) {
                 int best1=0;
@@ -404,18 +423,29 @@ public class ConditionalShapeSegmentation {
                        }
                    }
                }
-           }
-           for (int best=0;best<nbest;best++) {
+            }
+            if (sumPosterior) {
+               for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                   posteriors[obj1][obj1] += posteriors[obj1][obj2];
+                   posteriors[obj1][obj2] = 0.0;
+               }
+            } else if (maxPosterior) {
+               for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                   posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
+                   posteriors[obj1][obj2] = 0.0;
+               }
+            }
+            for (int best=0;best<nbest;best++) {
                 int best1=0;
-				int best2=0;
-					
+                int best2=0;
+                    
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                     if (posteriors[obj1][obj2]>posteriors[best1][best2]) {
-						best1 = obj1;
-						best2 = obj2;
-					}
-				}
-				// sub optimal labeling, but easy to read
+                        best1 = obj1;
+                        best2 = obj2;
+                    }
+                }
+                // sub optimal labeling, but easy to read
                 labels[best][id] = 100*(best1+1)+(best2+1);
                 probas[best][id] = (float)posteriors[best1][best2];
                 // remove best value
