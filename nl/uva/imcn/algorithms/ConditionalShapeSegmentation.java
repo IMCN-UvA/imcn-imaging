@@ -36,6 +36,13 @@ public class ConditionalShapeSegmentation {
 	private float[] 		probaImages;
 	private int[] 			labelImages;
 	
+	private int[]        spatialLabel;
+	private float[]      spatialProba;
+	
+	private int[]        intensityLabel;
+	private float[]      intensityProba;
+	
+	
 	private int nx, ny, nz, nxyz;
 	private float rx, ry, rz;
 
@@ -217,7 +224,8 @@ public class ConditionalShapeSegmentation {
 		}
 		System.out.println("mean spatial iqr: "+(iqrsum/iqrden));
 		// levelsets are now discarded...
-		levelsets = null;
+		// not yet! 
+		//levelsets = null;
 		
 		System.out.println("compute joint conditional intensity priors");
 		
@@ -289,7 +297,14 @@ public class ConditionalShapeSegmentation {
                            if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
                                // found value: proceeed
                                for (int sub=0;sub<nsub;sub++) {
+                                   // adds uncertainties from mismatch between subject intensities and mean shape
+                                   /*
                                    double psub = probas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                      *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                   */
+                                   double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
+                                   double pshape = FastMath.exp(-0.5*(ldist*ldist));
+                                   double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                    // add to the mean
                                    sum += psub*contrasts[sub][c][xyz];
@@ -321,7 +336,14 @@ public class ConditionalShapeSegmentation {
                            if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
                                // found value: proceeed
                                for (int sub=0;sub<nsub;sub++) {
+                                   // adds uncertainties from mismatch between subject intensities and mean shape
+                                   /*
                                    double psub = probas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                   */                    
+                                   double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
+                                   double pshape = FastMath.exp(-0.5*(ldist*ldist));
+                                   double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
                                                        *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                    // add to the mean
                                    var += psub*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2])*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2]);
@@ -347,6 +369,7 @@ public class ConditionalShapeSegmentation {
 		    }
 		}
 		// at this point the atlas data is not used anymore
+		levelsets = null;
 		contrasts = null;
 		System.out.println("\ndone");
           
