@@ -396,7 +396,7 @@ public class ConditionalShapeSegmentation {
                            posteriors[obj1][obj2] *= pobjc;
                        } else {
                            // what to do here? does it ever happen?
-                           System.out.print("!");
+                           //System.out.print("!");
                        }
                    }
                }
@@ -407,7 +407,7 @@ public class ConditionalShapeSegmentation {
                    posteriors[obj1][obj2] = 0.0;
                }
             } else if (maxPosterior) {
-               for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+               for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
                    posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
                    posteriors[obj1][obj2] = 0.0;
                }
