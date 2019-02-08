@@ -101,6 +101,12 @@ public class ConditionalShapeSegmentation {
 
 	// create outputs
 	public final int getBestDimension() { return nbest; }
+	public final float[] getBestSpatialProbabilityMaps() { return spatialProbas; }
+	public final int[] getBestSpatialProbabilityLabels() { return spatialLabels; }
+
+	public final float[] getBestIntensityProbabilityMaps() { return intensityProbas; }
+	public final int[] getBestIntensityProbabilityLabels() { return intensityLabels; }
+
 	public final float[] getBestProbabilityMaps() { return probaImages; }
 	public final int[] getBestProbabilityLabels() { return labelImages; }
 
@@ -432,7 +438,7 @@ public class ConditionalShapeSegmentation {
                            posteriors[obj1][obj2] *= pobjc;
                        } else {
                            // what to do here? does it ever happen?
-                           System.out.print("!");
+                           //System.out.print("!");
                        }
                    }
                }
@@ -443,7 +449,7 @@ public class ConditionalShapeSegmentation {
                    posteriors[obj1][obj2] = 0.0;
                }
             } else if (maxPosterior) {
-               for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+               for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
                    posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
                    posteriors[obj1][obj2] = 0.0;
                }
@@ -536,29 +542,57 @@ public class ConditionalShapeSegmentation {
         // merge both results
 		id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		   double[][] posteriors = new double[nobj][nobj];
-		   for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-               // look for non-zero priors
-               posteriors[obj1][obj2] = 0.0;
+		    double[][] posteriors = new double[nobj][nobj];
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                // look for non-zero priors
+                posteriors[obj1][obj2] = 0.0;
            
-               for (int best=0;best<nbest;best++) {
-                   if (spatialLabels[xyz+best*nxyz]==100*(obj1+1)+(obj2+1)) {
-                       // multiply nc times to balance prior and posterior
-                       posteriors[obj1][obj2] = 1.0;
-                       // for debug: just intensity
-                       for (int c=0;c<nc;c++) posteriors[obj1][obj2] *= spatialProbas[xyz+best*nxyz];
-                   }
-               }
-               if (posteriors[obj1][obj2]>0) {
-                   for (int best=0;best<nbest;best++) {
-                       if (intensityLabels[xyz+best*nxyz]==100*(obj1+1)+(obj2+1)) {
-                           posteriors[obj1][obj2] *= intensityProbas[xyz+best*nxyz]; 
-                       }
-                   }
-               }
-           }
+                for (int best=0;best<nbest;best++) {
+                    if (spatialLabels[xyz+best*nxyz]==100*(obj1+1)+(obj2+1)) {
+                        // multiply nc times to balance prior and posterior
+                        posteriors[obj1][obj2] = 1.0;
+                        // for debug: just intensity
+                        for (int c=0;c<nc;c++) posteriors[obj1][obj2] *= spatialProbas[xyz+best*nxyz];
+                    }
+                }
+                if (posteriors[obj1][obj2]>0) {
+                    for (int best=0;best<nbest;best++) {
+                        if (intensityLabels[xyz+best*nxyz]==100*(obj1+1)+(obj2+1)) {
+                            posteriors[obj1][obj2] *= intensityProbas[xyz+best*nxyz]; 
+                        }
+                    }
+                }
+            }
+            for (int best=0;best<nbest;best++) {
+                int best1=0;
+                int best2=0;
+                    
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    if (posteriors[obj1][obj2]>posteriors[best1][best2]) {
+                        best1 = obj1;
+                        best2 = obj2;
+                    }
+                }
+                // sub optimal labeling, but easy to read
+                labels[best][id] = 100*(best1+1)+(best2+1);
+                probas[best][id] = (float)posteriors[best1][best2];
+                // remove best value
+                posteriors[best1][best2] = 0.0;
+            }
+            id++;
         }
-		
+
+        probaImages = new float[nbest*nxyz];
+		labelImages = new int[nbest*nxyz];
+		id=0;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int best=0;best<nbest;best++) {
+                probaImages[xyz+best*nxyz] = probas[best][id];
+                labelImages[xyz+best*nxyz] = labels[best][id];
+            }
+            id++;
+        }
+
         return;
 	}
 
