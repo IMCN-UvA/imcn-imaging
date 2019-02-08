@@ -466,6 +466,59 @@ public class ConditionalShapeSegmentation {
  		    }
  		    id++;
 		}
+		// add a local diffusion step?
+		
+		// graph = N-most likely neihgbors (based on target intensity)
+		ngraph = 4;
+		
+		// build ID map
+		int[] idmap = new int[nxyz];
+		id = 0;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    idmap[xyz] = id;
+		    id++;
+		}
+		
+		// compute the median of stdevs from atlas -> scale for image distances
+		double[] stdevs = new double[nobj*nobj];
+		float[] medstdv= new float[nc];
+		for (int c=0;c<nc;c++) {
+		    int ndev=0;
+		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+		        if (condstdv[c][obj1][obj2]>0) {
+		            stdevs[ndev] = condstdv[c][obj1][obj2];
+		            ndev++;
+		        }
+		    }
+		    Percentile measure = new Percentile();
+                measure.setData(val);
+			
+                medc[c][id] = (float)measure.evaluate(50.0); 
+                		}
+		float[][] ngbw = new float[ndata][ngraph];
+		int[][] ngbi = new int[ndata][ngraph];
+		float[] ngbsim = new float[26];
+		for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+		    int xyz = x+nx*y+nx*ny*z;
+		    if (mask[xyz]) {
+		        for (byte d=0;d<26;d++) {
+		            int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
+		            if (mask[ngb]) {
+                        ngbsim[d] = 1.0/FastMath.sqrt(2.0*FastMath.PI*medstdv[c]*medstdv[c])
+                                     *FastMath.exp( -0.5*(target[c][xyz]-target[c][ngb])*(target[c][xyz]-target[c][ngb])
+                                     /(medstdv[c]*medstdv[c]) );
+                    } else {
+                        ngbsim[d] = 0.0f;
+                    }
+                }
+                // choose the N best ones
+                
+            }
+        }
+		        
+		
+		// diffusion only between i|j <-> i|j, i|j <-> i|k, i|j <-> j|i
+		
 		// rebuild output
 		target = null;
 		
@@ -480,7 +533,7 @@ public class ConditionalShapeSegmentation {
             id++;
         }
         
-        // merge bothe results
+        // merge both results
 		id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		   double[][] posteriors = new double[nobj][nobj];
