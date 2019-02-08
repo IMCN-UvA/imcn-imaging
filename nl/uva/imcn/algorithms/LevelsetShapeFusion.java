@@ -70,6 +70,15 @@ public class LevelsetShapeFusion {
             average[xyz] = 0.0f;
             for (int n=0;n<nsubj;n++) average[xyz] += levelsets[n][xyz]/(float)nsubj;
 		}
+		System.out.println("compute stdev");
+		float[] stdev = null;
+        stdev = new float[nxyz];
+        for (int xyz=0;xyz<nxyz;xyz++) {	
+            stdev[xyz] = 0.0f;
+            for (int n=0;n<nsubj;n++) stdev[xyz] += (levelsets[n][xyz]-average[xyz])*(levelset[n][xyz]-average[xyz])/(float)nsubj;
+            stdev[xyz] = (float)FastMath.sqrt(stdev[xyz]);
+		}
+		
 		// optional: correct topology here
 		if (topoParam==true) {
             FastMarchingTopologyCorrection topocorrect = new FastMarchingTopologyCorrection();
@@ -115,7 +124,7 @@ public class LevelsetShapeFusion {
                     int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                     if (average[ngb]>=0) {
                         // add to the heap (multiple instances are OK)
-                        heap.addValue(average[ngb],ngb,(byte)1);
+                        heap.addValue(average[ngb]-stdev[ngb],ngb,(byte)1);
                     }
                 }
             } else {
@@ -125,8 +134,9 @@ public class LevelsetShapeFusion {
         // run until the volume exceeds the mean volume
         float threshold = 0.0f;
         while (heap.isNotEmpty() && vol<meanvol) {
-            threshold = heap.getFirst();
+            //threshold = heap.getFirst();
             int xyz = heap.getFirstId();
+            threshold = average[xyz];
             heap.removeFirst();	
             if (label[xyz]==false) {
                 vol++;
@@ -135,17 +145,14 @@ public class LevelsetShapeFusion {
                 for (byte k = 0; k<6; k++) {
                     int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                     if (label[ngb]==false) {
-                        heap.addValue(average[ngb],ngb,(byte)1);
+                        heap.addValue(average[ngb]-stdev[ngb],ngb,(byte)1);
                     }
                 }
             }
         }
-        System.out.println("Distance offset: "+threshold);
-        for (int xyz=0;xyz<nxyz;xyz++) {
-            average[xyz] -= threshold;
-        }
+        System.out.println("Distance offset ~ "+threshold);
         // result
-        meanImage = average;
+        meanImage = ObjectTransforms.signedDistanceFunction(label, nx, ny, nz);
         
         return;
 	}
