@@ -40,11 +40,11 @@ public class ConditionalShapeSegmentation {
 	private float[] 		probaImages;
 	private int[] 			labelImages;
 	
-	private int[]        spatialLabel;
-	private float[]      spatialProba;
+	private int[]        spatialLabels;
+	private float[]      spatialProbas;
 	
-	private int[]        intensityLabel;
-	private float[]      intensityProba;
+	private int[]        intensityLabels;
+	private float[]      intensityProbas;
 	
 	
 	private int nx, ny, nz, nxyz;
@@ -246,6 +246,18 @@ public class ConditionalShapeSegmentation {
 		// not yet! 
 		//levelsets = null;
 		
+		// for debug: get intermediate results
+		spatialProbas = new float[nbest*nxyz];
+		spatialLabels = new int[nbest*nxyz];
+		id=0;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int best=0;best<nbest;best++) {
+                spatialProbas[xyz+best*nxyz] = probas[best][id];
+                spatialLabels[xyz+best*nxyz] = labels[best][id];
+            }
+            id++;
+        }
+		    
 		System.out.println("compute joint conditional intensity priors");
 		
 		float[][][] contrasts = intensImages;
@@ -407,7 +419,8 @@ public class ConditionalShapeSegmentation {
                    if (labels[best][id]==100*(obj1+1)+(obj2+1)) {
                        // multiply nc times to balance prior and posterior
                        posteriors[obj1][obj2] = 1.0;
-                       for (int c=0;c<nc;c++) posteriors[obj1][obj2] *= probas[best][id];
+                       // for debug: just intensity
+                       //for (int c=0;c<nc;c++) posteriors[obj1][obj2] *= probas[best][id];
                    }
                }
                if (posteriors[obj1][obj2]>0) {
@@ -456,15 +469,41 @@ public class ConditionalShapeSegmentation {
 		// rebuild output
 		target = null;
 		
-		probaImages = new float[nbest*nxyz];
-		labelImages = new int[nbest*nxyz];
+		intensityProbas = new float[nbest*nxyz];
+		intensityLabels = new int[nbest*nxyz];
 		id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nbest;best++) {
-                probaImages[xyz+best*nxyz] = probas[best][id];
-                labelImages[xyz+best*nxyz] = labels[best][id];
+                intensityProbas[xyz+best*nxyz] = probas[best][id];
+                intensityLabels[xyz+best*nxyz] = labels[best][id];
             }
             id++;
+        }
+        
+        // merge bothe results
+		id=0;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		   double[][] posteriors = new double[nobj][nobj];
+		   for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+               // look for non-zero priors
+               posteriors[obj1][obj2] = 0.0;
+           
+               for (int best=0;best<nbest;best++) {
+                   if (spatialLabels[xyz+best*nxyz]==100*(obj1+1)+(obj2+1)) {
+                       // multiply nc times to balance prior and posterior
+                       posteriors[obj1][obj2] = 1.0;
+                       // for debug: just intensity
+                       for (int c=0;c<nc;c++) posteriors[obj1][obj2] *= spatialProbas[xyz+best*nxyz];
+                   }
+               }
+               if (posteriors[obj1][obj2]>0) {
+                   for (int best=0;best<nbest;best++) {
+                       if (intensityLabels[xyz+best*nxyz]==100*(obj1+1)+(obj2+1)) {
+                           posteriors[obj1][obj2] *= intensityProbas[xyz+best*nxyz]; 
+                       }
+                   }
+               }
+           }
         }
 		
         return;
