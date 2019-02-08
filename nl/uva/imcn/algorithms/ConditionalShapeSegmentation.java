@@ -524,7 +524,7 @@ public class ConditionalShapeSegmentation {
 		// add a local diffusion step?
 		
 		// graph = N-most likely neihgbors (based on target intensity)
-		int ngraph = 4;
+		int nngb = 6;
 		
 		// build ID map
 		int[] idmap = new int[nxyz];
@@ -535,9 +535,10 @@ public class ConditionalShapeSegmentation {
 		}
 		
 		
-		float[][] ngbw = new float[ndata][ngraph];
-		int[][] ngbi = new int[ndata][ngraph];
+		float[][] ngbw = new float[nngb][ndata];
+		int[][] ngbi = new int[nngb][ndata];
 		float[] ngbsim = new float[26];
+		id=0;
 		for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
 		    int xyz = x+nx*y+nx*ny*z;
 		    if (mask[xyz]) {
@@ -554,12 +555,86 @@ public class ConditionalShapeSegmentation {
                     }
                 }
                 // choose the N best ones
+               for (int n=0;n<nngb;n++) {
+                    byte best=0;
+                        
+                    for (byte d=0;d<26;d++)
+                        if (ngbsim[d]>ngbsim[best]) 
+                            best = d;
+                    
+                    ngbw[n][id] = ngbsim[best];
+                    ngbi[n][id] = idmap[Ngb.neighborIndex(best, xyz, nx,ny,nz)];
+                    
+                    ngbsim[best] = 0.0f;
+                }
                 
             }
-        }
-		        
+        }  
 		
 		// diffusion only between i|j <-> i|j, i|j <-> i|k, i|j <-> j|i
+		
+		float[][] diffusedProbas = new float[nbest][ndata]; 
+		int[][] diffusedLabels = new int[nbest][ndata];
+		int nt = 10;
+		for (int t=0;t<nt;t++) {
+            for (id=0;id<ndata;id++) {
+                double[][] diffused = new double[nobj][nobj];
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    diffused[obj1][obj2] = 0.0;
+                    
+                    for (int best=0;best<nbest;best++) {
+                        if (finalLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                            // multiply nc times to balance prior and posterior
+                            diffused[obj1][obj2] = finalProbas[best][id];
+                        }
+                    }
+                    if (diffused[obj1][obj2]>0) {
+                        float den = 1.0f;
+                        for (int n=0;n<nngb;n++) {
+                            int ngb = ngbi[n][id];
+                            float ngbmax = 0.0f;
+                            // max over neighbors ( -> stop at first found)
+                            for (int best=0;best<nbest;best++) {
+                                if ( (finalLabels[best][ngb]>100*(obj1+1) &&  finalLabels[best][ngb]<100*(obj1+2))
+                                    || finalLabels[best][ngb]==100*(obj1+1)+(obj2+1) ) {
+                                        ngbmax = Numerics.max(ngbmax, finalProbas[best][ngb]);
+                                        best = nbest;
+                                }
+                            }
+                            diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
+                            den += ngbw[n][id];
+                        }
+                        diffused[obj1][obj2] /= den;
+                    }
+                }
+                for (int best=0;best<nbest;best++) {
+                    int best1=0;
+                    int best2=0;
+                        
+                    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                        if (diffused[obj1][obj2]>diffused[best1][best2]) {
+                            best1 = obj1;
+                            best2 = obj2;
+                        }
+                    }
+                    // sub optimal labeling, but easy to read
+                    diffusedLabels[best][id] = 100*(best1+1)+(best2+1);
+                    diffusedProbas[best][id] = (float)diffused[best1][best2];
+                    // remove best value
+                    diffused[best1][best2] = 0.0;
+                }
+            }
+            double diff = 0.0;
+            for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                if (finalLabels[best][id] != diffusedLabels[best][id]) {
+                    diff += finalProbas[best][id]*diffusedProbas[best][id];
+                }
+                finalLabels[best][id] = diffusedLabels[best][id];
+                finalProbas[best][id] = diffusedProbas[best][id];
+            }
+            System.out.println("diffusion step "+t+": "+(diff/ndata));
+            if (diff/ndata<0.01) t=nt;
+		}
 		
 		// rebuild output
 		target = null;
