@@ -75,7 +75,7 @@ public class LevelsetShapeFusion {
         stdev = new float[nxyz];
         for (int xyz=0;xyz<nxyz;xyz++) {	
             stdev[xyz] = 0.0f;
-            for (int n=0;n<nsubj;n++) stdev[xyz] += (levelsets[n][xyz]-average[xyz])*(levelset[n][xyz]-average[xyz])/(float)nsubj;
+            for (int n=0;n<nsubj;n++) stdev[xyz] += (levelsets[n][xyz]-average[xyz])*(levelsets[n][xyz]-average[xyz])/(float)nsubj;
             stdev[xyz] = (float)FastMath.sqrt(stdev[xyz]);
 		}
 		
