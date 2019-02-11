@@ -34,6 +34,8 @@ public class ConditionalShapeSegmentation {
 	private boolean cancelAll = false;
 	private boolean sumPosterior = false;
 	private boolean maxPosterior = false;
+	private int maxiter = 0;
+	private float maxdiff = 0.01f;
 	//private boolean topoParam = true;
 	//private     String	            lutdir = null;
 	
@@ -74,6 +76,11 @@ public class ConditionalShapeSegmentation {
 	    cancelAll = cA;
 	    sumPosterior = sP;
 	    maxPosterior = mP;
+	}
+	
+	public final void setDiffusionParameters(int iter, float diff) {
+	    maxiter = iter;
+	    maxdiff = diff;
 	}
 	
 	//public static final void setFollowSkeleton(boolean val) { skelParam=val; }
@@ -575,8 +582,7 @@ public class ConditionalShapeSegmentation {
 		
 		float[][] diffusedProbas = new float[nbest][ndata]; 
 		int[][] diffusedLabels = new int[nbest][ndata];
-		int nt = 10;
-		for (int t=0;t<nt;t++) {
+		for (int t=0;t<maxiter;t++) {
             for (id=0;id<ndata;id++) {
                 double[][] diffused = new double[nobj][nobj];
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
@@ -627,13 +633,13 @@ public class ConditionalShapeSegmentation {
             double diff = 0.0;
             for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
                 if (finalLabels[best][id] != diffusedLabels[best][id]) {
-                    diff += finalProbas[best][id]*diffusedProbas[best][id];
+                    diff += Numerics.abs(finalProbas[best][id]-diffusedProbas[best][id]);
                 }
                 finalLabels[best][id] = diffusedLabels[best][id];
                 finalProbas[best][id] = diffusedProbas[best][id];
             }
             System.out.println("diffusion step "+t+": "+(diff/ndata));
-            if (diff/ndata<0.01) t=nt;
+            if (diff/ndata<maxdiff) t=maxiter;
 		}
 		
 		// rebuild output
