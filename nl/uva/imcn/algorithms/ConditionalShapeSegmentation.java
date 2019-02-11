@@ -335,7 +335,8 @@ public class ConditionalShapeSegmentation {
                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                    */
                                    double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
-                                   double pshape = FastMath.exp(-0.5*(ldist*ldist));
+                                   double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
+                                   double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
                                    double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                    // add to the mean
@@ -407,13 +408,14 @@ public class ConditionalShapeSegmentation {
 
 		
 		// compute the median of stdevs from atlas -> scale for image distances
-		double[] stdevs = new double[nobj*nobj];
+		// use only the j|j labels -> intra class variations
+		double[] stdevs = new double[nobj];
 		float[] medstdv= new float[nc];
 		for (int c=0;c<nc;c++) {
 		    int ndev=0;
-		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-		        if (condstdv[c][obj1][obj2]>0) {
-		            stdevs[ndev] = condstdv[c][obj1][obj2];
+		    for (int obj=0;obj<nobj;obj++) {
+		        if (condstdv[c][obj][obj]>0) {
+		            stdevs[ndev] = condstdv[c][obj][obj];
 		            ndev++;
 		        }
 		    }
@@ -422,6 +424,10 @@ public class ConditionalShapeSegmentation {
         }
         stdevs = null;
 
+        for (int c=0;c<nc;c++) {
+            System.out.println("median intra-class stdev (contrast "+c+"): "+medstdv[c]);
+		}
+        
         System.out.println("apply priors to target");
         
         float[][] intensProbas = new float[nbest][ndata]; 
@@ -477,7 +483,8 @@ public class ConditionalShapeSegmentation {
 		// posterior : merge both measures
         float[][] finalProbas = new float[nbest][ndata]; 
 		int[][] finalLabels = new int[nbest][ndata];
-        for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+        id=0;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    double[][] posteriors = new double[nobj][nobj];
 		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                 // look for non-zero priors
@@ -489,14 +496,16 @@ public class ConditionalShapeSegmentation {
                         posteriors[obj1][obj2] = shapeProbas[best][id];
                     }
                 }
+                double intensPrior = 0.0;
                 if (posteriors[obj1][obj2]>0) {
                     for (int best=0;best<nbest;best++) {
                         if (intensLabels[best][id]==100*(obj1+1)+(obj2+1)) {
                             // multiply nc times to balance prior and posterior
-                            posteriors[obj1][obj2] *= intensProbas[best][id];
+                            intensPrior = intensProbas[best][id];
                         }
                     }
                 }
+                posteriors[obj1][obj2] *= intensPrior;
             }
             if (sumPosterior) {
                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
