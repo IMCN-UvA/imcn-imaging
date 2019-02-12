@@ -21,6 +21,14 @@ public class ConditionalShapeSegmentation {
 	
 	private float[][] targetImages;
 	
+	private float[][] shapeProbas = null;
+	private int[][] shapeLabels = null;
+	
+	private double[][][] condmean = null;
+	private double[][][] condstdv = null;
+	
+	private boolean[] mask;
+	
 	private int nsub;
 	private int nobj;
 	private int nc;
@@ -51,6 +59,7 @@ public class ConditionalShapeSegmentation {
 	
 	private int nx, ny, nz, nxyz;
 	private float rx, ry, rz;
+	private int ndata;
 
 	public final void setNumberOfSubjectsObjectsAndContrasts(int sub,int obj,int cnt) {
 	    nsub = sub;
@@ -61,13 +70,45 @@ public class ConditionalShapeSegmentation {
 	    targetImages = new float[nc][];
 	}
 	public final void setLevelsetImageAt(int sub, int obj, float[] val) { lvlImages[sub][obj] = val; 
-	    System.out.println("levelset ("+sub+", "+obj+") = "+lvlImages[sub][obj][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	    //System.out.println("levelset ("+sub+", "+obj+") = "+lvlImages[sub][obj][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
 	}
 	public final void setContrastImageAt(int sub, int cnt, float[] val) { intensImages[sub][cnt] = val; 
-	    System.out.println("contrast ("+sub+", "+cnt+") = "+intensImages[sub][cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	    //System.out.println("contrast ("+sub+", "+cnt+") = "+intensImages[sub][cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
 	}
 	public final void setTargetImageAt(int cnt, float[] val) { targetImages[cnt] = val; 
-	    System.out.println("target ("+cnt+") = "+targetImages[cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	    //System.out.println("target ("+cnt+") = "+targetImages[cnt][Numerics.floor(nx/2+nx*ny/2+nx*ny*nz/2)]);
+	}
+	public final void setShapeAtlasProbas(float[] val) {
+	    // first estimate ndata
+	    ndata = 0;
+	    for (int xyz=0;xyz<nxyz;xyz++) if (val[xyz]>0) ndata++;
+	    shapeProbas = new float[nbest][ndata];
+	    int id=0;
+	    for (int xyz=0;xyz<nxyz;xyz++) if (val[xyz]>0) {
+	        for (int best=0;best<nbest;best++) shapeProbas[best][id] = val[xyz+best*nxyz];
+	    }
+	}
+	public final void setShapeAtlasLabels(int[] val) {
+	    // first estimate ndata
+	    ndata = 0;
+	    for (int xyz=0;xyz<nxyz;xyz++) if (val[xyz]>0) ndata++;
+	    shapeLabels = new int[nbest][ndata];
+	    int id=0;
+	    for (int xyz=0;xyz<nxyz;xyz++) if (val[xyz]>0) {
+	        for (int best=0;best<nbest;best++) shapeLabels[best][id] = val[xyz+best*nxyz];
+	    }
+	}
+	public final void setConditionalMean(float[] val) {
+	    condmean = new double[nc][nobj][nobj];
+	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	        condmean[c][obj1][obj2] = val[obj1+obj2*nobj+c*nobj*nobj];
+	    }
+	}
+	public final void setConditionalStdv(float[] val) {
+	    condstdv = new double[nc][nobj][nobj];
+	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	        condstdv[c][obj1][obj2] = val[obj1+obj2*nobj+c*nobj*nobj];
+	    }
 	}
 	
 	public final void setOptions(boolean mB, boolean cB, boolean cA, boolean sP, boolean mP) {
@@ -117,10 +158,24 @@ public class ConditionalShapeSegmentation {
 	public final float[] getBestProbabilityMaps() { return probaImages; }
 	public final int[] getBestProbabilityLabels() { return labelImages; }
 
+	public final float[] getConditionalMean() {
+	    float[] cm = new float[nc*nobj*nobj];
+	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	    }
+	    return cm;
+	}
+	
 	public void execute() {
 	    
 	    System.out.println("dimensions: "+nsub+" subjects, "+nc+" contrasts, "+nobj+" objects");
-		
+	
+	    if (shapeProbas==null || shapeLabels==null || condmean==null || condstdv==null) {
+	        computeAtlasPriors();
+	    }
+	    estimateTarget();
+    }	    
+	    
+	private final void computeAtlasPriors() {
 	    float[][][] levelsets = null; 
 	    
 	    // not correct: explicitly build the levelset of the background first, then crop it
@@ -156,8 +211,8 @@ public class ConditionalShapeSegmentation {
             levelsets = lvlImages;
 		}
 		// mask anything too far outside the structures of interest
-		boolean[] mask = new boolean[nxyz];
-		int ndata = 0;
+		mask = new boolean[nxyz];
+		ndata = 0;
 		for (int xyz=0;xyz<nxyz;xyz++) {
 		    float mindist = boundary;
             for (int sub=0;sub<nsub;sub++) for (int obj=0;obj<nobj;obj++) {
@@ -175,8 +230,8 @@ public class ConditionalShapeSegmentation {
         // adapt number of kept values?
         
 		System.out.println("compute joint conditional shape priors");
-		float[][] shapeProbas = new float[nbest][ndata]; 
-		int[][] shapeLabels = new int[nbest][ndata];
+		shapeProbas = new float[nbest][ndata]; 
+		shapeLabels = new int[nbest][ndata];
 		
 		int ctr = Numerics.floor(nsub/2);
         int dev = Numerics.floor(nsub/4);
@@ -309,8 +364,8 @@ public class ConditionalShapeSegmentation {
 		
 		// use spatial priors and subject variability priors to define conditional intensity
 		// mean and stdev
-		double[][][] condmean = new double[nc][nobj][nobj];
-		double[][][] condstdv = new double[nc][nobj][nobj];
+		condmean = new double[nc][nobj][nobj];
+		condstdv = new double[nc][nobj][nobj];
 		for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
 		    System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
 		    for (int c=0;c<nc;c++) {
@@ -375,7 +430,8 @@ public class ConditionalShapeSegmentation {
                                                        *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                    */                    
                                    double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
-                                   double pshape = FastMath.exp(-0.5*(ldist*ldist));
+                                   double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
+                                   double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
                                    double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
                                                        *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                    // add to the mean
@@ -405,7 +461,9 @@ public class ConditionalShapeSegmentation {
 		levelsets = null;
 		contrasts = null;
 		System.out.println("\ndone");
+	}
 
+	private final void estimateTarget() {	
 		
 		// compute the median of stdevs from atlas -> scale for image distances
 		// use only the j|j labels -> intra class variations
@@ -435,7 +493,7 @@ public class ConditionalShapeSegmentation {
 				
 		// combine priors and contrasts posteriors (update the priors maps)
 		float[][] target = targetImages;
-		id=0;
+		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		   double[][] likelihood = new double[nobj][nobj];
 		   for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
@@ -599,7 +657,6 @@ public class ConditionalShapeSegmentation {
                     
                     for (int best=0;best<nbest;best++) {
                         if (finalLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                            // multiply nc times to balance prior and posterior
                             diffused[obj1][obj2] = finalProbas[best][id];
                         }
                     }
@@ -611,7 +668,7 @@ public class ConditionalShapeSegmentation {
                             // max over neighbors ( -> stop at first found)
                             for (int best=0;best<nbest;best++) {
                                 if ( (finalLabels[best][ngb]>100*(obj1+1) &&  finalLabels[best][ngb]<100*(obj1+2))
-                                    || finalLabels[best][ngb]==100*(obj1+1)+(obj2+1) ) {
+                                    || finalLabels[best][ngb]==100*(obj2+1)+(obj1+1) ) {
                                         ngbmax = Numerics.max(ngbmax, finalProbas[best][ngb]);
                                         best = nbest;
                                 }
