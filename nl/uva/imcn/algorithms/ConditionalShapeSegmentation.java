@@ -346,6 +346,7 @@ public class ConditionalShapeSegmentation {
 		System.out.println("1. estimate subjects distribution");
 		double[] cntsum = new double[nc];
 		double[] cntden = new double[nc];
+		val = new double[nsub];
 		id = 0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int c=0;c<nc;c++) {
@@ -595,7 +596,7 @@ public class ConditionalShapeSegmentation {
                    double val = 0.0;
                    for (int best=0;best<nbest;best++) {
                        if (separateIntensLabels[c][best][id]==100*(obj1+1)+(obj2+1)) {
-                           val = separateIntensLabels[c][best][id];
+                           val = separateIntensProbas[c][best][id];
                            best = nbest;
                        }
                    }
