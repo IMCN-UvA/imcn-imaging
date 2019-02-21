@@ -201,6 +201,22 @@ public class Histogram {
 		}
 	}
 	/**
+     *    1D histogram building with unequal weights
+     */
+    public Histogram(int bins, float min, float max) {
+    	this.bins = bins;
+    	this.min = min;
+    	this.max = max;
+		hist = new double[bins];
+		
+		for (int n=0;n<bins;n++) hist[n] = 0;
+	}
+	
+	public void addSample(float data, float weight) {
+	    int bin = Numerics.max(0, Numerics.ceil( (data-min)/(max-min)*bins)-1);
+		hist[bin]+=weight;	
+	}
+	/**
      *    1D histogram building
      */
     public void buildFromDifferences(float[][][] image, boolean[][][] mask, int ngb, int nx, int ny, int nz) {

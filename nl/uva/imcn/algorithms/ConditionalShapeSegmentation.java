@@ -46,9 +46,19 @@ public class ConditionalShapeSegmentation {
 	private float maxdiff = 0.01f;
 	//private boolean topoParam = true;
 	//private     String	            lutdir = null;
-	private double top = 99.0;
+	private double top = 95.0;
 	private boolean rescaleProbas = true;
 	private boolean rescaleIntensities = true;
+	private boolean modelHistogram = true;
+	
+	
+	// possibly to extend to entire distribution?
+	// model size: nbins x nc x nobj x nobj
+	// benefits: no probability computation, no a priori model
+	private double[][][][] condhistogram = null;
+	private double[][][] condmin = null;
+	private double[][][] condmax = null;
+	private int nbins=100;
 	
 	private float[] 		probaImages;
 	private int[] 			labelImages;
@@ -110,6 +120,19 @@ public class ConditionalShapeSegmentation {
 	        condstdv[c][obj1][obj2] = val[obj1+obj2*nobj+c*nobj*nobj];
 	    }
 	}
+	public final void setConditionalHistogram(float[] val, int n) {
+	    nbins = n;
+	    condhistogram = new double[nc][nobj][nobj][nbins];
+	    condmin = new double[nc][nobj][nobj];
+	    condmax = new double[nc][nobj][nobj];
+	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	        condmin[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*0+nobj*nobj*(nbins+2)*c];
+	        for (int bin=0;bin<nbins;bin++) {
+	            condhistogram[c][obj1][obj2][bin] = val[obj2+obj1*nobj+nobj*nobj*(bin+1)+nobj*nobj*(nbins+2)*c];
+	        }
+	        condmax[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*(nbins+1)+nobj*nobj*(nbins+2)*c];
+	    }
+	}
 	
 	public final void setOptions(boolean mB, boolean cB, boolean cA, boolean sP, boolean mP) {
 	    modelBackground = mB;
@@ -123,6 +146,10 @@ public class ConditionalShapeSegmentation {
 	public final void setDiffusionParameters(int iter, float diff) {
 	    maxiter = iter;
 	    maxdiff = diff;
+	}
+	
+	public final void setHistogramModeling(boolean val) {
+	    modelHistogram = val;
 	}
 	
 	//public static final void setFollowSkeleton(boolean val) { skelParam=val; }
@@ -173,6 +200,22 @@ public class ConditionalShapeSegmentation {
 	        val[obj1+obj2*nobj+c*nobj*nobj] = (float)condstdv[c][obj1][obj2];
 	    }
 	    return val;
+	}
+	
+	public final float[] getConditionalHistogram() {
+	    float[] val = new float[nc*nobj*nobj*(nbins+2)];
+	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	        val[obj2+obj1*nobj+0*nobj*nobj+c*nobj*nobj*(nbins+2)] = (float)condmin[c][obj1][obj2];
+	        for (int bin=0;bin<nbins;bin++) {
+	            val[obj2+obj1*nobj+(bin+1)*nobj*nobj+c*nobj*nobj*(nbins+2)] = (float)condhistogram[c][obj1][obj2][bin];
+	        }
+	        val[obj2+obj1*nobj+(nbins+1)*nobj*nobj+c*nobj*nobj*(nbins+2)] = (float)condmax[c][obj1][obj2];
+	    }
+	    return val;
+	}
+	
+	public final int getNumberOfBins() {
+	    return nbins;
 	}
 	
 	public void execute() {
@@ -386,101 +429,182 @@ public class ConditionalShapeSegmentation {
 		
 		System.out.println("2. compute conditional maps");
 		
-		// use spatial priors and subject variability priors to define conditional intensity
-		// mean and stdev
-		condmean = new double[nc][nobj][nobj];
-		condstdv = new double[nc][nobj][nobj];
-		for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-		    System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
-		    for (int c=0;c<nc;c++) {
-		       
-		       // System.out.println("..mean");
-		       double sum = 0.0;
-		       double den = 0.0;
-		       id = 0;
-		       for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                   double med = medc[c][id];
-                   double iqr = iqrc[c][id];
-                   // assuming here that iqr==0 means masked regions
-                   if (iqr>0) { 
-                       // look for non-zero priors
-                       for (int best=0;best<nbest;best++) {
-                           if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                               // found value: proceeed
-                               for (int sub=0;sub<nsub;sub++) {
-                                   // adds uncertainties from mismatch between subject intensities and mean shape
-                                   /*
-                                   double psub = shapeProbas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                      *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-                                   */
-                                   double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
-                                   double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
-                                   double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
-                                   double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                      *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-                                   // add to the mean
-                                   sum += psub*contrasts[sub][c][xyz];
-                                   den += psub;
+		if (modelHistogram) {
+		    System.out.println("(use histograms for intensities)");
+		    condmin = new double[nc][nobj][nobj];
+		    condmax = new double[nc][nobj][nobj];
+		    condhistogram = new double[nc][nobj][nobj][nbins];
+		    
+		    // min, max: percentile on median (to avoid spreading the values to outliers)
+		    // same min, max for all object pairs => needed for fair comparison 
+		    // (or normalize by volume, i.e. taking width into account
+		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+		        System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
+                for (int c=0;c<nc;c++) {
+                    condmin[c][obj1][obj2] = 1e9f;
+                    condmax[c][obj1][obj2] = -1e9f;
+                }
+                for (int c=0;c<nc;c++) {
+                    boolean existsPair = false;
+                    // use median intensities to estimate [min,max]
+                    id = 0;
+                    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                        double med = medc[c][id];
+                        double iqr = iqrc[c][id];
+                        // assuming here that iqr==0 means masked regions
+                        if (iqr>0) { 
+                            // look only among non-zero priors for each region
+                            for (int best=0;best<nbest;best++) {
+                                if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                                    // found value: proceeed
+                                    if (med<condmin[c][obj1][obj2]) condmin[c][obj1][obj2] = med;
+                                    if (med>condmax[c][obj1][obj2]) condmax[c][obj1][obj2] = med;
+                                    if (condmin[c][obj1][obj2]!=condmax[c][obj1][obj2]) existsPair = true;
+                                }
+                            }
+                        }
+                        id++;
+                    }
+                    if (existsPair) {
+                        id = 0;
+                        for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                            double med = medc[c][id];
+                            double iqr = iqrc[c][id];
+                            // assuming here that iqr==0 means masked regions
+                            if (iqr>0) { 
+                                // look for non-zero priors
+                                for (int best=0;best<nbest;best++) {
+                                    if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                                        // found value: proceeed
+                                        for (int sub=0;sub<nsub;sub++) {
+                                            // adds uncertainties from mismatch between subject intensities and mean shape
+                                            /*
+                                            double psub = shapeProbas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                               *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                            */
+                                            double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
+                                            double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
+                                            double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
+                                            double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                               *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                            // add to the mean
+                                            int bin = Numerics.bounded(Numerics.ceil( (contrasts[sub][c][xyz]-condmin[c][obj1][obj2])/(condmax[c][obj1][obj2]-condmin[c][obj1][obj2])*nbins)-1, 0, nbins-1);
+                                            condhistogram[c][obj1][obj2][bin] += psub;
+                                        }
+                                        best=nbest;
+                                    }
+                                }
+                            }
+                            id++;
+                        }
+                        // normalize: count / spread = 1
+                        double sum = 0.0;
+                        for (int bin=0;bin<nbins;bin++) sum += condhistogram[c][obj1][obj2][bin];   
+                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] /= sum*(condmax[c][obj1][obj2]-condmin[c][obj1][obj2]);   
+                    } else {
+                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] = 0;   
+                        condmin[c][obj1][obj2] = 0;
+                        condmax[c][obj1][obj2] = 0;
+                    }
+                }
+            }
+        } else {
+            // use spatial priors and subject variability priors to define conditional intensity
+            // mean and stdev
+            System.out.println("(use mean,stdev for intensities)");
+            condmean = new double[nc][nobj][nobj];
+            condstdv = new double[nc][nobj][nobj];
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
+                for (int c=0;c<nc;c++) {
+                   // System.out.println("..mean");
+                   double sum = 0.0;
+                   double den = 0.0;
+                   id = 0;
+                   for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                       double med = medc[c][id];
+                       double iqr = iqrc[c][id];
+                       // assuming here that iqr==0 means masked regions
+                       if (iqr>0) { 
+                           // look for non-zero priors
+                           for (int best=0;best<nbest;best++) {
+                               if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                                   // found value: proceeed
+                                   for (int sub=0;sub<nsub;sub++) {
+                                       // adds uncertainties from mismatch between subject intensities and mean shape
+                                       /*
+                                       double psub = shapeProbas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                          *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                       */
+                                       double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
+                                       double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
+                                       double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
+                                       double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                          *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                       // add to the mean
+                                       sum += psub*contrasts[sub][c][xyz];
+                                       den += psub;
+                                   }
+                                   best=nbest;
                                }
-                               best=nbest;
                            }
                        }
-		           }
-		           id++;
-		       }
-		       // build average
-		       if (den>0) {
-                   condmean[c][obj1][obj2] = sum/den;
-		       } else {
-		           System.out.print("empty pair        ");
-		           condmean[c][obj1][obj2] = 0.0;
-		       }
-		       //System.out.println("..stdev");
-		       double var = 0.0;
-		       id = 0;
-		       for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                   double med = medc[c][id];
-                   double iqr = iqrc[c][id];
-                   // assuming here that iqr==0 means masked regions
-                   if (iqr>0) { 
-                       // look for non-zero priors
-                       for (int best=0;best<nbest;best++) {
-                           if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                               // found value: proceeed
-                               for (int sub=0;sub<nsub;sub++) {
-                                   // adds uncertainties from mismatch between subject intensities and mean shape
-                                   /*
-                                   double psub = shapeProbas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-                                   */                    
-                                   double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
-                                   double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
-                                   double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
-                                   double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                       *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-                                   // add to the mean
-                                   var += psub*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2])*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2]);
-                               }
-                               best=nbest;
-                           }
-                       }
+                       id++;
                    }
-		           id++;
-		       }
-		       // build stdev
-		       if (var==0) {
-		           System.out.print("empty region        ");
-		           condstdv[c][obj1][obj2] = 0;
-		       } else if (den>0) {
-		           condstdv[c][obj1][obj2] = FastMath.sqrt(var/den);
-		           System.out.print(condmean[c][obj1][obj2]+" +/- "+condstdv[c][obj1][obj2]+"    ");
-		       
-                } else {
-                   System.out.print("empty pair        ");
-		           condstdv[c][obj1][obj2] = 0;
-		       } 
-		    }
-		}
+                   // build average
+                   if (den>0) {
+                       condmean[c][obj1][obj2] = sum/den;
+                   } else {
+                       System.out.print("empty pair        ");
+                       condmean[c][obj1][obj2] = 0.0;
+                   }
+                   //System.out.println("..stdev");
+                   double var = 0.0;
+                   id = 0;
+                   for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                       double med = medc[c][id];
+                       double iqr = iqrc[c][id];
+                       // assuming here that iqr==0 means masked regions
+                       if (iqr>0) { 
+                           // look for non-zero priors
+                           for (int best=0;best<nbest;best++) {
+                               if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                                   // found value: proceeed
+                                   for (int sub=0;sub<nsub;sub++) {
+                                       // adds uncertainties from mismatch between subject intensities and mean shape
+                                       /*
+                                       double psub = shapeProbas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                           *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                       */                    
+                                       double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
+                                       double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
+                                       double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
+                                       double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                                           *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
+                                       // add to the mean
+                                       var += psub*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2])*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2]);
+                                   }
+                                   best=nbest;
+                               }
+                           }
+                       }
+                       id++;
+                   }
+                   // build stdev
+                   if (var==0) {
+                       System.out.print("empty region        ");
+                       condstdv[c][obj1][obj2] = 0;
+                   } else if (den>0) {
+                       condstdv[c][obj1][obj2] = FastMath.sqrt(var/den);
+                       System.out.print(condmean[c][obj1][obj2]+" +/- "+condstdv[c][obj1][obj2]+"    ");
+                   
+                    } else {
+                       System.out.print("empty pair        ");
+                       condstdv[c][obj1][obj2] = 0;
+                   } 
+                }
+            }
+        }
 		// at this point the atlas data is not used anymore
 		levelsets = null;
 		contrasts = null;
@@ -535,9 +659,15 @@ public class ConditionalShapeSegmentation {
                    }
                    if (likelihood[obj1][obj2]>0) {
                        if (condstdv[c][obj1][obj2]>0) {
-                           double pobjc = medstdv[c]/FastMath.sqrt(2.0*FastMath.PI*condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2])
+                           double pobjc;
+                           if (modelHistogram) {
+                               int bin = Numerics.bounded(Numerics.ceil( (target[c][xyz]-condmin[c][obj1][obj2])/(condmax[c][obj1][obj2]-condmin[c][obj1][obj2])*nbins)-1, 0, nbins-1);
+                               pobjc = medstdv[c]*condhistogram[c][obj1][obj2][bin];
+                           } else {
+                               pobjc = medstdv[c]/FastMath.sqrt(2.0*FastMath.PI*condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2])
                                            *FastMath.exp( -0.5*(target[c][xyz]-condmean[c][obj1][obj2])*(target[c][xyz]-condmean[c][obj1][obj2])
                                                                /(condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2]) );
+                           }
                            likelihood[obj1][obj2] *= pobjc;
                        } else {
                            // what to do here? does it ever happen?
