@@ -58,7 +58,9 @@ public class ConditionalShapeSegmentation {
 	private double[][][][] condhistogram = null;
 	private double[][][] condmin = null;
 	private double[][][] condmax = null;
-	private int nbins=100;
+	private int nbins=200;
+	
+	private boolean[][][] condpair = null;
 	
 	private float[] 		probaImages;
 	private int[] 			labelImages;
@@ -222,7 +224,7 @@ public class ConditionalShapeSegmentation {
 	    
 	    System.out.println("dimensions: "+nsub+" subjects, "+nc+" contrasts, "+nobj+" objects");
 	
-	    if (shapeProbas==null || shapeLabels==null || condmean==null || condstdv==null) {
+	    if (shapeProbas==null || shapeLabels==null) {
 	        computeAtlasPriors();
 	    }
 	    estimateTarget();
@@ -301,6 +303,7 @@ public class ConditionalShapeSegmentation {
                 } else if (cancelAll && obj1==obj2) {
                     priors[obj1][obj2] = 0.0;
                 } else {
+                    /*
                     // median and iqr
                     for (int sub=0;sub<nsub;sub++) {
                         val[sub] = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
@@ -313,7 +316,7 @@ public class ConditionalShapeSegmentation {
                 
                     double med = measure.evaluate(50.0); 
                     double iqr = measure.evaluate(75.0) - measure.evaluate(25.0);
-                    */
+                    *//*
                     Numerics.sort(val);
                     double med, iqr;
                     if (nsub%2==0) {
@@ -342,7 +345,24 @@ public class ConditionalShapeSegmentation {
                     double sigma2 = 1.349*iqr+Numerics.max(deltaOut, deltaIn, 1.0);
                     sigma2 *= sigma2;
                     priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*med*med/sigma2 );
+                    */
                     //priors[obj1][obj2] = FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
+                    // alternative idea: use a combination of mean and stdev as distance basis
+                    // -> take into account uncertainty better
+                    double mean = 0.0;
+                    for (int sub=0;sub<nsub;sub++) {
+                        mean += Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
+                    }
+                    mean /= nsub;
+                    double var = 0.0;
+                    for (int sub=0;sub<nsub;sub++) {
+                        var += Numerics.square(mean-Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn));
+                    }
+                    var /= nsub;
+                    
+                    double sigma2 = FastMath.sqrt(var)+Numerics.max(deltaOut, deltaIn, 1.0);
+                    sigma2 *= sigma2;
+                    priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
                 }
 			}
             for (int best=0;best<nbest;best++) {
@@ -429,6 +449,7 @@ public class ConditionalShapeSegmentation {
 		
 		System.out.println("2. compute conditional maps");
 		
+		condpair = new boolean[nc][nobj][nobj];
 		if (modelHistogram) {
 		    System.out.println("(use histograms for intensities)");
 		    condmin = new double[nc][nobj][nobj];
@@ -466,6 +487,35 @@ public class ConditionalShapeSegmentation {
                         id++;
                     }
                     if (existsPair) {
+                        condpair[c][obj1][obj2] = true;
+                        System.out.print("["+condmin[c][obj1][obj2]+" , "+condmax[c][obj1][obj2]+"]    ");
+                    } else {
+                        condmin[c][obj1][obj2] = 0;
+                        condmax[c][obj1][obj2] = 0;
+                        condpair[c][obj1][obj2] = false;
+                        System.out.print("empty pair    ");
+                    }
+                }
+            }
+            /* not needed, but simpler */
+            // take the global min,max to avoid over-sampling of histograms?
+		    for (int c=0;c<nc;c++) {
+		        double cmin = condmin[c][0][0];
+		        double cmax = condmax[c][0][0];
+		        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    if (condpair[c][obj1][obj2]) {
+                        if (condmin[c][obj1][obj2]<cmin) cmin = condmin[c][obj1][obj2];
+                        if (condmax[c][obj1][obj2]>cmax) cmax = condmax[c][obj1][obj2];
+                    }
+                }
+		        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+		            condmin[c][obj1][obj2] = cmin;
+		            condmax[c][obj1][obj2] = cmax;
+		        }
+		    }
+		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+		        for (int c=0;c<nc;c++) {
+		            if (condpair[c][obj1][obj2]) {
                         id = 0;
                         for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
                             double med = medc[c][id];
@@ -497,14 +547,34 @@ public class ConditionalShapeSegmentation {
                             }
                             id++;
                         }
-                        // normalize: count / spread = 1
+                        // smooth histogram with its variance? (directly expressed in bin space)
+                        double avg = 0.0;
+                        double den = 0.0;
+                        for (int bin=0;bin<nbins;bin++) {
+                            avg += condhistogram[c][obj1][obj2][bin]*bin;
+                            den += condhistogram[c][obj1][obj2][bin];
+                        }
+                        avg /= den;
+                        double var = 0.0;
+                        for (int bin=0;bin<nbins;bin++) {
+                            var += condhistogram[c][obj1][obj2][bin]*(bin-avg)*(bin-avg);
+                        }
+                        var /= den;
+                        double[] tmphist = new double[nbins];
+                        for (int bin1=0;bin1<nbins;bin1++) {
+                            for (int bin2=0;bin2<nbins;bin2++) {
+                                tmphist[bin1] += condhistogram[c][obj1][obj2][bin2]*FastMath.exp(-0.5*(bin1-bin2)*(bin1-bin2)/var);
+                            }
+                        }
+                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] = tmphist[bin];
+                        
+                        // normalize: sum over count x spread = 1
                         double sum = 0.0;
                         for (int bin=0;bin<nbins;bin++) sum += condhistogram[c][obj1][obj2][bin];   
-                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] /= sum*(condmax[c][obj1][obj2]-condmin[c][obj1][obj2]);   
+                        //for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] /= sum*(condmax[c][obj1][obj2]-condmin[c][obj1][obj2]);   
+                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] /= sum;   
                     } else {
                         for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] = 0;   
-                        condmin[c][obj1][obj2] = 0;
-                        condmax[c][obj1][obj2] = 0;
                     }
                 }
             }
@@ -554,9 +624,11 @@ public class ConditionalShapeSegmentation {
                    // build average
                    if (den>0) {
                        condmean[c][obj1][obj2] = sum/den;
+                       condpair[c][obj1][obj2] = true;
                    } else {
                        System.out.print("empty pair        ");
                        condmean[c][obj1][obj2] = 0.0;
+                       condpair[c][obj1][obj2] = false;
                    }
                    //System.out.println("..stdev");
                    double var = 0.0;
@@ -594,13 +666,15 @@ public class ConditionalShapeSegmentation {
                    if (var==0) {
                        System.out.print("empty region        ");
                        condstdv[c][obj1][obj2] = 0;
+                       condpair[c][obj1][obj2] = false;
                    } else if (den>0) {
                        condstdv[c][obj1][obj2] = FastMath.sqrt(var/den);
                        System.out.print(condmean[c][obj1][obj2]+" +/- "+condstdv[c][obj1][obj2]+"    ");
-                   
-                    } else {
+                       condpair[c][obj1][obj2] = true;
+                   } else {
                        System.out.print("empty pair        ");
                        condstdv[c][obj1][obj2] = 0;
+                       condpair[c][obj1][obj2] = false;
                    } 
                 }
             }
@@ -620,10 +694,26 @@ public class ConditionalShapeSegmentation {
 		for (int c=0;c<nc;c++) {
 		    int ndev=0;
 		    for (int obj=0;obj<nobj;obj++) {
-		        if (condstdv[c][obj][obj]>0) {
-		            stdevs[ndev] = condstdv[c][obj][obj];
-		            ndev++;
-		        }
+		        if (condpair[c][obj][obj]) {
+		            if (modelHistogram) {
+                        double sum = 0.0;
+                        double den = 0.0;
+                        for (int bin=0;bin<nbins;bin++) {
+                            sum += condhistogram[c][obj][obj][bin]*(condmin[c][obj][obj]+bin*(condmax[c][obj][obj]-condmin[c][obj][obj])/nbins);
+                            den += condhistogram[c][obj][obj][bin];
+                        }
+                        sum /= den;
+                        double var = 0.0;
+                        for (int bin=0;bin<nbins;bin++) {
+                            double val = condmin[c][obj][obj]+bin*(condmax[c][obj][obj]-condmin[c][obj][obj])/nbins;
+                            var += condhistogram[c][obj][obj][bin]*(val-sum)*(val-sum);
+                        }
+                        stdevs[ndev] = FastMath.sqrt(var/den);
+                    } else {
+                        stdevs[ndev] = condstdv[c][obj][obj];
+                    }
+                    ndev++;
+                }
 		    }
 		    Percentile measure = new Percentile();
             medstdv[c] = (float)measure.evaluate(stdevs, 0, ndev, 50.0);
@@ -658,14 +748,14 @@ public class ConditionalShapeSegmentation {
                        }
                    }
                    if (likelihood[obj1][obj2]>0) {
-                       if (condstdv[c][obj1][obj2]>0) {
+                       if (condpair[c][obj1][obj2]) {
                            double pobjc;
                            if (modelHistogram) {
                                int bin = Numerics.bounded(Numerics.ceil( (target[c][xyz]-condmin[c][obj1][obj2])/(condmax[c][obj1][obj2]-condmin[c][obj1][obj2])*nbins)-1, 0, nbins-1);
                                pobjc = medstdv[c]*condhistogram[c][obj1][obj2][bin];
                            } else {
                                pobjc = medstdv[c]/FastMath.sqrt(2.0*FastMath.PI*condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2])
-                                           *FastMath.exp( -0.5*(target[c][xyz]-condmean[c][obj1][obj2])*(target[c][xyz]-condmean[c][obj1][obj2])
+                                            *FastMath.exp( -0.5*(target[c][xyz]-condmean[c][obj1][obj2])*(target[c][xyz]-condmean[c][obj1][obj2])
                                                                /(condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2]) );
                            }
                            likelihood[obj1][obj2] *= pobjc;
