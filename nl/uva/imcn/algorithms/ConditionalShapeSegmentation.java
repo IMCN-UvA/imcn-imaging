@@ -32,7 +32,7 @@ public class ConditionalShapeSegmentation {
 	private int nsub;
 	private int nobj;
 	private int nc;
-	private int nbest = 8;
+	private int nbest = 16;
 	
 	private float deltaIn = 2.0f;
 	private float deltaOut = 0.0f;
@@ -50,6 +50,7 @@ public class ConditionalShapeSegmentation {
 	private boolean rescaleProbas = true;
 	private boolean rescaleIntensities = true;
 	private boolean modelHistogram = true;
+	private boolean rescaleHistograms = true;
 	
 	
 	// possibly to extend to entire distribution?
@@ -497,8 +498,7 @@ public class ConditionalShapeSegmentation {
                     }
                 }
             }
-            /* not needed, but simpler */
-            // take the global min,max to avoid over-sampling of histograms?
+            // take the global min,max to make histograms comparable
 		    for (int c=0;c<nc;c++) {
 		        double cmin = condmin[c][0][0];
 		        double cmax = condmax[c][0][0];
@@ -547,6 +547,7 @@ public class ConditionalShapeSegmentation {
                             }
                             id++;
                         }
+                        /*
                         // smooth histogram with its variance? (directly expressed in bin space)
                         double avg = 0.0;
                         double den = 0.0;
@@ -560,6 +561,9 @@ public class ConditionalShapeSegmentation {
                             var += condhistogram[c][obj1][obj2][bin]*(bin-avg)*(bin-avg);
                         }
                         var /= den;
+                        */
+                        // smooth histograms to avoid sharp edge effects
+                        double var = 1.0*1.0;
                         double[] tmphist = new double[nbins];
                         for (int bin1=0;bin1<nbins;bin1++) {
                             for (int bin2=0;bin2<nbins;bin2++) {
