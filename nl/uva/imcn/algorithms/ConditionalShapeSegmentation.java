@@ -294,16 +294,19 @@ public class ConditionalShapeSegmentation {
                     
 		double[] val = new double[nsub];
 		int id=0;
-		double iqrsum=0, iqrden=0;
+		//double iqrsum=0, iqrden=0;
+		double stdsum=0, stdden=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    double[][] priors = new double[nobj][nobj];
             for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                // cancelling self-structures?
+                // cancelling self-structures? not here, because of intensity modeling...
+                /*
                 if (cancelBackground && obj1==0 && obj2==0) {
                     priors[obj1][obj2] = 0.0;
                 } else if (cancelAll && obj1==obj2) {
                     priors[obj1][obj2] = 0.0;
                 } else {
+                */
                     /*
                     // median and iqr
                     for (int sub=0;sub<nsub;sub++) {
@@ -359,12 +362,15 @@ public class ConditionalShapeSegmentation {
                     for (int sub=0;sub<nsub;sub++) {
                         var += Numerics.square(mean-Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn));
                     }
-                    var /= nsub;
+                    var = FastMath.sqrt(var/nsub);
                     
-                    double sigma2 = FastMath.sqrt(var)+Numerics.max(deltaOut, deltaIn, 1.0);
+                    stdsum += var;
+                    stdden ++;
+                    
+                    double sigma2 = var+Numerics.max(deltaOut, deltaIn, 1.0);
                     sigma2 *= sigma2;
                     priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
-                }
+                //}
 			}
             for (int best=0;best<nbest;best++) {
                 int best1=0;
@@ -376,15 +382,25 @@ public class ConditionalShapeSegmentation {
 						best2 = obj2;
 					}
 				}
-				// sub optimal labeling, but easy to read
-                shapeLabels[best][id] = 100*(best1+1)+(best2+1);
-                shapeProbas[best][id] = (float)priors[best1][best2];
+				// check if best is zero: give null label in that case
+				if (priors[best1][best2]>0) {
+                    // sub optimal labeling, but easy to read
+                    shapeLabels[best][id] = 100*(best1+1)+(best2+1);
+                    shapeProbas[best][id] = (float)priors[best1][best2];
+                } else {
+                    for (int b=best;b<nbest;b++) {
+                        shapeLabels[b][id] = 0;
+                        shapeProbas[b][id] = 0.0f;
+                    }
+                    best = nbest;
+                }                    
                 // remove best value
                 priors[best1][best2] = 0.0;
  		    }
  		    id++;
 		}
-		System.out.println("mean spatial iqr: "+(iqrsum/iqrden));
+		//System.out.println("mean spatial iqr: "+(iqrsum/iqrden));
+		System.out.println("mean spatial stdev: "+(stdsum/stdden));
 		// levelsets are now discarded...
 		// not yet! 
 		//levelsets = null;
@@ -743,24 +759,35 @@ public class ConditionalShapeSegmentation {
                    // look for non-zero priors
                    likelihood[obj1][obj2] = 0.0;
                    
-                   for (int best=0;best<nbest;best++) {
-                       if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                           // multiply nc times to balance prior and posterior
-                           //likelihood[obj1][obj2] = 1.0;
-                           likelihood[obj1][obj2] = shapeProbas[best][id];
-                           best = nbest;
+                   // impose the leftout classes here
+                   if (cancelBackground && obj1==0 && obj2==0) {
+                        likelihood[obj1][obj2] = 0.0;
+                    } else if (cancelAll && obj1==obj2) {
+                        likelihood[obj1][obj2] = 0.0;
+                    } else {                   
+                       for (int best=0;best<nbest;best++) {
+                           if (shapeLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                               // multiply nc times to balance prior and posterior
+                               //likelihood[obj1][obj2] = 1.0;
+                               likelihood[obj1][obj2] = shapeProbas[best][id];
+                               best = nbest;
+                           }
                        }
-                   }
+                    }
                    if (likelihood[obj1][obj2]>0) {
                        if (condpair[c][obj1][obj2]) {
                            double pobjc;
                            if (modelHistogram) {
                                int bin = Numerics.bounded(Numerics.ceil( (target[c][xyz]-condmin[c][obj1][obj2])/(condmax[c][obj1][obj2]-condmin[c][obj1][obj2])*nbins)-1, 0, nbins-1);
                                pobjc = medstdv[c]*condhistogram[c][obj1][obj2][bin];
+                               //pobjc = condhistogram[c][obj1][obj2][bin];
                            } else {
                                pobjc = medstdv[c]/FastMath.sqrt(2.0*FastMath.PI*condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2])
                                             *FastMath.exp( -0.5*(target[c][xyz]-condmean[c][obj1][obj2])*(target[c][xyz]-condmean[c][obj1][obj2])
                                                                /(condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2]) );
+                               //pobjc = 1.0/FastMath.sqrt(2.0*FastMath.PI*condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2])
+                               //             *FastMath.exp( -0.5*(target[c][xyz]-condmean[c][obj1][obj2])*(target[c][xyz]-condmean[c][obj1][obj2])
+                               //                                /(condstdv[c][obj1][obj2]*condstdv[c][obj1][obj2]) );
                            }
                            likelihood[obj1][obj2] *= pobjc;
                        } else {
@@ -930,7 +957,7 @@ public class ConditionalShapeSegmentation {
 		}
 		
 		
-		float[][] ngbw = new float[nngb][ndata];
+		float[][] ngbw = new float[nngb+1][ndata];
 		int[][] ngbi = new int[nngb][ndata];
 		float[] ngbsim = new float[26];
 		id=0;
@@ -942,7 +969,7 @@ public class ConditionalShapeSegmentation {
 		            if (mask[ngb]) {
 		                ngbsim[d] = 1.0f;
 		                for (int c=0;c<nc;c++) {
-                            ngbsim[d] *= FastMath.exp( -0.5/nc*(target[c][xyz]-target[c][ngb])*(target[c][xyz]-target[c][ngb])
+                            ngbsim[d] *= (float)FastMath.exp( -0.5/nc*(target[c][xyz]-target[c][ngb])*(target[c][xyz]-target[c][ngb])
                                          /(medstdv[c]*medstdv[c]) );
                         }
                     } else {
@@ -950,7 +977,8 @@ public class ConditionalShapeSegmentation {
                     }
                 }
                 // choose the N best ones
-               for (int n=0;n<nngb;n++) {
+                ngbw[nngb][id] = 0.0f;
+                for (int n=0;n<nngb;n++) {
                     byte best=0;
                         
                     for (byte d=0;d<26;d++)
@@ -959,6 +987,7 @@ public class ConditionalShapeSegmentation {
                     
                     ngbw[n][id] = ngbsim[best];
                     ngbi[n][id] = idmap[Ngb.neighborIndex(best, xyz, nx,ny,nz)];
+                    ngbw[nngb][id] += ngbsim[best];
                     
                     ngbsim[best] = 0.0f;
                 }
@@ -982,7 +1011,9 @@ public class ConditionalShapeSegmentation {
                         }
                     }
                     if (diffused[obj1][obj2]>0) {
-                        float den = 1.0f;
+                        float den = ngbw[nngb][id];
+                        diffused[obj1][obj2] *= den;
+                        
                         for (int n=0;n<nngb;n++) {
                             int ngb = ngbi[n][id];
                             float ngbmax = 0.0f;
