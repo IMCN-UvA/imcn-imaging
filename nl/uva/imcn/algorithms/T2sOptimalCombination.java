@@ -11,6 +11,7 @@ import org.apache.commons.math3.stat.descriptive.rank.Percentile;
 public class T2sOptimalCombination {
 	float[][] image = null;
 	float[] te;
+	int[] depth = null;
 	
 	int nx, ny, nz, nt, nxyz;
 	float rx, ry, rz;
@@ -24,7 +25,8 @@ public class T2sOptimalCombination {
 	float[] r2img;
 	float[] errimg;
 	
-	boolean robust = false;
+	boolean robust = true;
+	boolean local = false;
 	
 	// set inputs
 	public final void setNumberOfEchoes(int val) { 
@@ -34,6 +36,8 @@ public class T2sOptimalCombination {
 	}
 	public final void setEchoImageAt(int num, float[] val) { image[num] = val; }
 	public final void setEchoTimeAt(int num, float val) { te[num] = val; }
+	
+	public final void setImageEchoDepth(int[] val) { depth = val; }
 
 	public final void setDimensions(int x, int y, int z) { nx=x; ny=y; nz=z; nt=1; nxyz=nx*ny*nz; }
 	public final void setDimensions(int x, int y, int z, int t) { nx=x; ny=y; nz=z; nt=t; nxyz=nx*ny*nz; }
@@ -70,22 +74,27 @@ public class T2sOptimalCombination {
 		r2img = new float[nxyz];
 		t2img = new float[nxyz];
 		errimg = new float[nxyz];
-		for (int xyz=0;xyz<nxyz;xyz++) {
-			boolean process=true;
-			for (int i=0;i<nimg;i++) if (image[i][xyz]==0) process=false;
-			if (process) {
-			    // average / median over entire time series?
-			    // or process direction by direction?
-			    s0img[xyz] = 0.0f;
-			    r2img[xyz] = 0.0f;
-			    t2img[xyz] = 0.0f;
-			    errimg[xyz] = 0.0f;
-			    
-			    for (int t=0;t<nt;t++) {
+		for (int t=0;t<nt;t++) {
+            double[] msqerr = new double[nimg];
+            double den = 0.0;
+		    for (int xyz=0;xyz<nxyz;xyz++) {
+                boolean process=true;
+                int dimg = nimg;
+                if (depth!=null) dimg = Numerics.max(2, Numerics.min(nimg,depth[t]));
+                 
+                for (int i=0;i<dimg;i++) if (image[i][xyz+nxyz*t]<=0) process=false;
+                if (process) {
+                    // average / median over entire time series?
+                    // or process direction by direction?
+                    s0img[xyz] = 0.0f;
+                    r2img[xyz] = 0.0f;
+                    t2img[xyz] = 0.0f;
+                    errimg[xyz] = 0.0f;
+                    
                     //System.out.print(".");
                     Sy = 0.0f;
                     Sxy = 0.0f;
-                    for (int i=0;i<nimg;i++) {
+                    for (int i=0;i<dimg;i++) {
                         double ydata = FastMath.log(image[i][xyz+nxyz*t]);
                         Sy += ydata;
                         Sxy += -ydata*te[i];
@@ -96,9 +105,9 @@ public class T2sOptimalCombination {
                     
                     if (robust) {
                         // build pairwise estimates for Theil-Shen estimator
-                        double[] slope = new double[nimg*(nimg-1)/2];
+                        double[] slope = new double[dimg*(dimg-1)/2];
                         int p = 0;
-                        for (int i=0;i<nimg;i++) for (int j=i+1;j<nimg;j++) {
+                        for (int i=0;i<dimg;i++) for (int j=i+1;j<dimg;j++) {
                             double sx = -te[i]-te[j];
                             double sx2 = te[i]*te[i]+te[j]*te[j];
                             double sy = FastMath.log(image[i][xyz+nxyz*t]) + FastMath.log(image[j][xyz+nxyz*t]);
@@ -112,8 +121,8 @@ public class T2sOptimalCombination {
                         Percentile measure = new Percentile();
                         r2val = Numerics.bounded( measure.evaluate(slope, 50.0), 0.001, 1000.0);
                         // get the corresponding SO
-                        double[] intercept = new double[nimg];
-                        for (int i=0;i<nimg;i++) {
+                        double[] intercept = new double[dimg];
+                        for (int i=0;i<dimg;i++) {
                             intercept[i] = r2val*te[i] + FastMath.log(image[i][xyz+nxyz*t]);
                         }
                         s0val = FastMath.exp(measure.evaluate(intercept, 50.0));
@@ -121,9 +130,9 @@ public class T2sOptimalCombination {
                     double residual = 0.0;
                     double mean = 0.0;
                     double variance = 0.0;
-                    for (int i=0;i<nimg;i++) mean += FastMath.log(image[i][xyz+nxyz*t]);
-                    mean /= nimg;
-                    for (int i=0;i<nimg;i++) {
+                    for (int i=0;i<dimg;i++) mean += FastMath.log(image[i][xyz+nxyz*t]);
+                    mean /= dimg;
+                    for (int i=0;i<dimg;i++) {
                         double expected = FastMath.log(s0val) - te[i]*r2val;
                         variance += Numerics.square(mean-FastMath.log(image[i][xyz+nxyz*t]));
                         residual += Numerics.square(expected-FastMath.log(image[i][xyz+nxyz*t]));
@@ -133,60 +142,90 @@ public class T2sOptimalCombination {
                     s0img[xyz] += (float)s0val;
                     r2img[xyz] += (float)r2val;
                     t2img[xyz] += 1.0f/(float)r2val;
-                    errimg[xyz] = (float)rsquare;                           
+                    errimg[xyz] = (float)rsquare;
+                    
+                    if (local) {
+                        for (int i=0;i<nimg;i++) {
+                            double expected = FastMath.log(s0val) - te[i]*r2val;
+                            msqerr[i] += Numerics.square(expected-FastMath.log(image[i][xyz+nxyz*t]))/variance;
+                        }
+                    }
+                    den++;
                 }
 			}
-		}
-		// estimate echoes quality?
-		double[][] msqerr = new double[nt][nimg];
-		double den = 0.0;
-        for (int xyz=0;xyz<nxyz;xyz++) {
-            boolean process=true;
-            for (int i=0;i<nimg;i++) if (image[i][xyz]==0) process=false;
-            
-            if (process) {
-                // now combine everything
-                s0img[xyz] /= nt;
-                r2img[xyz] /= nt;
-                t2img[xyz] /= nt;
-                errimg[xyz] /= nt;
-                
-                double[] weights = new double[nimg+1];
+            if (local) {
+                System.out.print("Echo quality:\n");
                 for (int i=0;i<nimg;i++) {
-                    weights[i] = FastMath.exp(-r2img[xyz]*te[i]);
-                    weights[nimg] += weights[i];
-                }
-                for (int t=0;t<nt;t++) {
+                    System.out.print("Image "+t+" Echo "+i+" = "+FastMath.sqrt(msqerr[i]/den)+" ("+msqerr[i]+", "+den+")\n");
+                }			
+            }
+		}
+		if (!local) {
+            // estimate echoes quality?
+            double[][] msqerr = new double[nt][nimg];
+            double den = 0.0;
+            for (int xyz=0;xyz<nxyz;xyz++) {
+                boolean process=true;
+                for (int i=0;i<nimg;i++) if (image[i][xyz]==0) process=false;
+                
+                if (process) {
+                    // now combine everything
+                    s0img[xyz] /= nt;
+                    r2img[xyz] /= nt;
+                    t2img[xyz] /= nt;
+                    errimg[xyz] /= nt;
+                    
+                    double[] weights = new double[nimg+1];
                     for (int i=0;i<nimg;i++) {
-                        msqerr[t][i] += Numerics.square(image[0][xyz+nxyz*t]-image[i][xyz+nxyz*t]*weights[i]/weights[0]);
+                        weights[i] = FastMath.exp(-r2img[xyz]*te[i]);
+                        weights[nimg] += weights[i];
                     }
+                    for (int t=0;t<nt;t++) {
+                        for (int i=0;i<nimg;i++) {
+                            msqerr[t][i] += Numerics.square(image[0][xyz+nxyz*t]-image[i][xyz+nxyz*t]*weights[i]/weights[0]);
+                        }
+                    }
+                    den++;
                 }
-                den++;
+            }
+            System.out.print("Echo quality:\n");
+            for (int t=0;t<nt;t++) for (int i=0;i<nimg;i++) {
+                System.out.print("Image "+t+" Echo "+i+" = "+(msqerr[t][i]/den)+"\n");
             }
         }
-        System.out.print("Echo quality:\n");
-        for (int t=0;t<nt;t++) for (int i=0;i<nimg;i++) {
-            System.out.print("Image "+t+" Echo "+i+" = "+(msqerr[t][i]/den)+"\n");
-        }
+        // global combination with variable depth
         for (int xyz=0;xyz<nxyz;xyz++) {
             boolean process=true;
-            for (int i=0;i<nimg;i++) if (image[i][xyz]==0) process=false;
-            if (process) {
-                // now combine everything
-                s0img[xyz] /= nt;
-                r2img[xyz] /= nt;
-                t2img[xyz] /= nt;
-                errimg[xyz] /= nt;
-                
-                double[] weights = new double[nimg+1];
-                for (int i=0;i<nimg;i++) {
-                    weights[i] = FastMath.exp(-r2img[xyz]*te[i]);
-                    weights[nimg] += weights[i];
-                }
-                for (int t=0;t<nt;t++) {
+            // now combine everything
+            s0img[xyz] /= nt;
+            r2img[xyz] /= nt;
+            t2img[xyz] /= nt;
+            errimg[xyz] /= nt;
+            
+            double[] weights = new double[nimg+1];
+            for (int i=0;i<nimg;i++) {
+                weights[i] = FastMath.exp(-r2img[xyz]*te[i]);
+                weights[nimg] += weights[i];
+            }
+            
+            for (int t=0;t<nt;t++) {
+                int dimg = nimg;
+                if (depth!=null) dimg = Numerics.max(2, Numerics.min(nimg,depth[t]));
+
+                for (int i=0;i<dimg;i++) if (image[i][xyz+nxyz*t]==0) process=false;
+                if (process) {
                     combined[xyz+nxyz*t] = 0.0f;
-                    for (int i=0;i<nimg;i++) {
+                    double partialsum = 0.0;
+                    double partialden = 0.0;
+                    // kept depth: use image
+                    for (int i=0;i<dimg;i++) {
                         combined[xyz+nxyz*t] += weights[i]/weights[nimg]*image[i][xyz+nxyz*t];
+                        partialsum += image[i][xyz+nxyz*t];
+                        partialden += weights[i];
+                    }
+                    // discarded depth: use combination of kept ones
+                    for (int i=dimg;i<nimg;i++) {
+                        combined[xyz+nxyz*t] += weights[i]/weights[nimg]*partialsum/partialden*weights[i];   
                     }
                 }
             }
