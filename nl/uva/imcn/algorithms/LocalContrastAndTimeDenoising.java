@@ -129,9 +129,13 @@ public class LocalContrastAndTimeDenoising {
 		// build index file
 		index = new int[nxyz];
 		int id=0;
-		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		    index[xyz] = id;
-		    id++;
+		for (int xyz=0;xyz<nxyz;xyz++) {
+		    if (mask[xyz]) {
+		        index[xyz] = id;
+                id++;
+            } else {
+                index[xyz] = -1;
+            }
 		}
 		
 		// re-format the image array
@@ -175,11 +179,16 @@ public class LocalContrastAndTimeDenoising {
                     int ngby = Numerics.min(ngb, ny-y);
                     int ngbz = Numerics.min(ngb, nz-z);
                     int ngb3 = 0;
+                    int[] patchid = new int[ngbx*ngby*ngbz];
                     for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
                         if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
+                            patchid[dx+ngbx*dy+ngbx*ngby*dz] = ngb3;
                             ngb3++;
+                        } else {
+                            patchid[dx+ngbx*dy+ngbx*ngby*dz] = -1;
                         }
                     }
+                    
                     boolean process = false;
                     if (ngb3<ntime*nc) {
                         System.out.print("!patch is too small!\n");
@@ -190,9 +199,11 @@ public class LocalContrastAndTimeDenoising {
                     if (process) {
                         double[][] patch = new double[ngb3][ntime*nc];
                         for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
-                            for (int ti=t;ti<t+ntime;ti++) for (int c=0;c<nc;c++) {
-                                //patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = images[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][ti];
-                                patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = maskedImages[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
+                            if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
+                                for (int ti=t;ti<t+ntime;ti++) for (int c=0;c<nc;c++) {
+                                    //patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = images[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][ti];
+                                    patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti-t+c*ntime] = maskedImages[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
+                                }
                             }
                         }
                         // mean over samples
@@ -292,23 +303,25 @@ public class LocalContrastAndTimeDenoising {
                         // add to the denoised image
                         double wpatch = (1.0/(1.0 + ntime*nc - nzero));
                         for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
-                            for (int ti=0;ti<ntime;ti++) {
-                                for (int c=0;c<nc;c++) {
-                                    denoised[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*patch[dx+ngbx*dy+ngbx*ngby*dz][ti+c*ntime]);
-                                    //denoised[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*patch[dx+ngbx*dy+ngbx*ngby*dz][ti+c*ntime]);
-                                    //eigval[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
-                                    //eigvec[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
-                                    //weights[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)wpatch;
-                                    //pcadim[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*(ntime-nzero));
-                                    //errmap[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*rsquare);
+                            if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
+                                for (int ti=0;ti<ntime;ti++) {
+                                    for (int c=0;c<nc;c++) {
+                                        denoised[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti+c*ntime]);
+                                        //denoised[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*patch[dx+ngbx*dy+ngbx*ngby*dz][ti+c*ntime]);
+                                        //eigval[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
+                                        //eigvec[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
+                                        //weights[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)wpatch;
+                                        //pcadim[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*(ntime-nzero));
+                                        //errmap[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*rsquare);
+                                    }
+                                    weights[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)wpatch;
+                                    pcadim[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*(ntime-nzero));
+                                    errmap[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*rsquare);
                                 }
-                                weights[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)wpatch;
-                                pcadim[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*(ntime-nzero));
-                                errmap[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*rsquare);
+                                //weights[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
+                                //pcadim[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*(ntime-nzero));
+                                //errmap[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*rsquare);
                             }
-                            //weights[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
-                            //pcadim[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*(ntime-nzero));
-                            //errmap[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*rsquare);
                         }
                     }
                 }
