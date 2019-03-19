@@ -1000,7 +1000,7 @@ public class ConditionalShapeSegmentation {
 		float[][] diffusedProbas = new float[nbest][ndata]; 
 		int[][] diffusedLabels = new int[nbest][ndata];
 		for (int t=0;t<maxiter;t++) {
-            for (id=0;id<ndata;id++) {
+            for (id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
                 double[][] diffused = new double[nobj][nobj];
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                     diffused[obj1][obj2] = 0.0;
@@ -1050,8 +1050,10 @@ public class ConditionalShapeSegmentation {
             }
             double diff = 0.0;
             for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
-                if (finalLabels[best][id] != diffusedLabels[best][id]) {
-                    diff += Numerics.abs(finalProbas[best][id]-diffusedProbas[best][id]);
+                if (finalLabels[best][id] == diffusedLabels[best][id]) {
+                    diff += Numerics.abs(diffusedProbas[best][id]-finalProbas[best][id]);
+                } else {
+                    diff += 2*Numerics.abs(diffusedProbas[best][id]-finalProbas[best][id]);
                 }
                 finalLabels[best][id] = diffusedLabels[best][id];
                 finalProbas[best][id] = diffusedProbas[best][id];

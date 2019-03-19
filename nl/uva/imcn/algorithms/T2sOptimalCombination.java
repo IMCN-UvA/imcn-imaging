@@ -82,7 +82,10 @@ public class T2sOptimalCombination {
                 int dimg = nimg;
                 if (depth!=null) dimg = Numerics.max(2, Numerics.min(nimg,depth[t]));
                  
-                for (int i=0;i<dimg;i++) if (image[i][xyz+nxyz*t]<=0) process=false;
+                //for (int i=0;i<dimg;i++) if (image[i][xyz+nxyz*t]<=0) {
+                    //process=false;
+                //    image[i][xyz+nxyz*t] = 1;
+                //}
                 if (process) {
                     // average / median over entire time series?
                     // or process direction by direction?
@@ -95,7 +98,7 @@ public class T2sOptimalCombination {
                     Sy = 0.0f;
                     Sxy = 0.0f;
                     for (int i=0;i<dimg;i++) {
-                        double ydata = FastMath.log(image[i][xyz+nxyz*t]);
+                        double ydata = FastMath.log(1+image[i][xyz+nxyz*t]);
                         Sy += ydata;
                         Sxy += -ydata*te[i];
                     }
@@ -110,8 +113,8 @@ public class T2sOptimalCombination {
                         for (int i=0;i<dimg;i++) for (int j=i+1;j<dimg;j++) {
                             double sx = -te[i]-te[j];
                             double sx2 = te[i]*te[i]+te[j]*te[j];
-                            double sy = FastMath.log(image[i][xyz+nxyz*t]) + FastMath.log(image[j][xyz+nxyz*t]);
-                            double sxy = -te[i]*FastMath.log(image[i][xyz+nxyz*t]) -te[j]*FastMath.log(image[j][xyz+nxyz*t]);
+                            double sy = FastMath.log(1+image[i][xyz+nxyz*t]) + FastMath.log(1+image[j][xyz+nxyz*t]);
+                            double sxy = -te[i]*FastMath.log(1+image[i][xyz+nxyz*t]) -te[j]*FastMath.log(1+image[j][xyz+nxyz*t]);
                             double dij = 2*sx2 - sx*sx;
                             double r2s =  (2*sxy-sx*sy)/dij;
                             slope[p] = r2s;
@@ -123,19 +126,19 @@ public class T2sOptimalCombination {
                         // get the corresponding SO
                         double[] intercept = new double[dimg];
                         for (int i=0;i<dimg;i++) {
-                            intercept[i] = r2val*te[i] + FastMath.log(image[i][xyz+nxyz*t]);
+                            intercept[i] = r2val*te[i] + FastMath.log(1+image[i][xyz+nxyz*t]);
                         }
                         s0val = FastMath.exp(measure.evaluate(intercept, 50.0));
                     }
                     double residual = 0.0;
                     double mean = 0.0;
                     double variance = 0.0;
-                    for (int i=0;i<dimg;i++) mean += FastMath.log(image[i][xyz+nxyz*t]);
+                    for (int i=0;i<dimg;i++) mean += FastMath.log(1+image[i][xyz+nxyz*t]);
                     mean /= dimg;
                     for (int i=0;i<dimg;i++) {
                         double expected = FastMath.log(s0val) - te[i]*r2val;
-                        variance += Numerics.square(mean-FastMath.log(image[i][xyz+nxyz*t]));
-                        residual += Numerics.square(expected-FastMath.log(image[i][xyz+nxyz*t]));
+                        variance += Numerics.square(mean-FastMath.log(1+image[i][xyz+nxyz*t]));
+                        residual += Numerics.square(expected-FastMath.log(1+image[i][xyz+nxyz*t]));
                     }
                     double rsquare = 1.0;
                     if (variance>0) rsquare = Numerics.max(1.0 - (residual/variance), 0.0);
@@ -147,7 +150,7 @@ public class T2sOptimalCombination {
                     if (local) {
                         for (int i=0;i<nimg;i++) {
                             double expected = FastMath.log(s0val) - te[i]*r2val;
-                            msqerr[i] += Numerics.square(expected-FastMath.log(image[i][xyz+nxyz*t]))/variance;
+                            msqerr[i] += Numerics.square(expected-FastMath.log(1+image[i][xyz+nxyz*t]))/variance;
                         }
                     }
                     den++;
@@ -166,7 +169,7 @@ public class T2sOptimalCombination {
             double den = 0.0;
             for (int xyz=0;xyz<nxyz;xyz++) {
                 boolean process=true;
-                for (int i=0;i<nimg;i++) if (image[i][xyz]==0) process=false;
+                //for (int i=0;i<nimg;i++) if (image[i][xyz]<=0) process=false;
                 
                 if (process) {
                     // now combine everything
@@ -182,7 +185,7 @@ public class T2sOptimalCombination {
                     }
                     for (int t=0;t<nt;t++) {
                         for (int i=0;i<nimg;i++) {
-                            msqerr[t][i] += Numerics.square(image[0][xyz+nxyz*t]-image[i][xyz+nxyz*t]*weights[i]/weights[0]);
+                            msqerr[t][i] += Numerics.square(1+image[0][xyz+nxyz*t]-(1+image[i][xyz+nxyz*t])*weights[i]/weights[0]);
                         }
                     }
                     den++;
@@ -212,15 +215,18 @@ public class T2sOptimalCombination {
                 int dimg = nimg;
                 if (depth!=null) dimg = Numerics.max(2, Numerics.min(nimg,depth[t]));
 
-                for (int i=0;i<dimg;i++) if (image[i][xyz+nxyz*t]==0) process=false;
+                //for (int i=0;i<dimg;i++) if (image[i][xyz+nxyz*t]<=0) {
+                //    process=false;
+                //    image[i][xyz+nxyz*t]=1;
+                //}
                 if (process) {
                     combined[xyz+nxyz*t] = 0.0f;
                     double partialsum = 0.0;
                     double partialden = 0.0;
                     // kept depth: use image
                     for (int i=0;i<dimg;i++) {
-                        combined[xyz+nxyz*t] += weights[i]/weights[nimg]*image[i][xyz+nxyz*t];
-                        partialsum += image[i][xyz+nxyz*t];
+                        combined[xyz+nxyz*t] += weights[i]/weights[nimg]*(1+image[i][xyz+nxyz*t]);
+                        partialsum += (1+image[i][xyz+nxyz*t]);
                         partialden += weights[i];
                     }
                     // discarded depth: use combination of kept ones
