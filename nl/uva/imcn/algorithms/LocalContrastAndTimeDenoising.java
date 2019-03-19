@@ -347,13 +347,13 @@ public class LocalContrastAndTimeDenoising {
         images = new float[nc][nxyz][nt];
         globalpcadim = new float[nt*nxyz];
         globalerrmap = new float[nt*nxyz];
-        for (int t=0;t<nt;t++) {
-            for (int xyz=0;xyz<nxyz;xyz++) {
+        for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+            for (int t=0;t<nt;t++) {
                 for (int c=0;c<nc;c++) {
                     images[c][xyz][t] = denoised[c][index[xyz]][t];
                 }
-                globalpcadim[xyz+t*nxyz] = pcadim[xyz][t];
-                globalerrmap[xyz+t*nxyz] = errmap[xyz][t];
+                globalpcadim[xyz+t*nxyz] = pcadim[index[xyz]][t];
+                globalerrmap[xyz+t*nxyz] = errmap[index[xyz]][t];
             }
         }
   		return;
