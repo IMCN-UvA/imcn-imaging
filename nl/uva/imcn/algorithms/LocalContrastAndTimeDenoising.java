@@ -17,7 +17,7 @@ public class LocalContrastAndTimeDenoising {
 
 	// input parameters
 	private		float[][][] 	images = null;
-	private		int			nx, ny, nz, nt, nxyz;
+	private		int			nx, ny, nz, nt, nxyz, nmask;
 	private 	float 		rx, ry, rz;
 
 	private     int         nc = 3;
@@ -44,13 +44,31 @@ public class LocalContrastAndTimeDenoising {
 	// set inputs
 	public final void setNumberOfContrasts(int val) { nc = val; }
 	
+	public final void setMaskImage(int[] val)  {
+	    mask = new boolean[nxyz];
+	    index = new int[nxyz];
+	    nmask = 0;
+	    for (int xyz=0;xyz<nxyz;xyz++) {
+	        if (val[xyz]>0) {
+	            mask[xyz] = true;
+                index[xyz] = nmask;
+                nmask++;
+            } else {
+                mask[xyz] = false;
+                index[xyz] = -1;
+            }
+        }
+	}
+	    
 	public final void setTimeSerieImageAt(int c, float[] in)  {
 	    if (images==null) {
-	        images = new float[nc][nxyz][nt];
+	        images = new float[nc][nmask][nt];
 	    }
-	    for (int xyz=0;xyz<nxyz;xyz++) for (int t=0;t<nt;t++) {
-            images[c][xyz][t] = in[xyz+t*nxyz];
-        }
+	    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+	        for (int t=0;t<nt;t++) {
+	            images[c][index[xyz]][t] = in[xyz+t*nxyz];
+	        }
+	    }
 	}
 	public final void setStdevCutoff(float in) { stdevCutoff = in; }
 	public final void setMinimumDimension(int in) { minDimension = in; }
@@ -78,9 +96,9 @@ public class LocalContrastAndTimeDenoising {
 	// get outputs
 	public float[] getDenoisedImageAt(int c) {
 	    float[] combi = new float[nxyz*nt];
-	    for (int xyz=0;xyz<nxyz;xyz++) {
+	    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
             for (int t=0;t<nt;t++) {
-                combi[xyz+t*nxyz] = images[c][xyz][t];
+                combi[xyz+t*nxyz] = images[c][index[xyz]][t];
             }
 	    }
 	    return combi;
@@ -110,6 +128,7 @@ public class LocalContrastAndTimeDenoising {
         System.out.print("patch dimensions ["+ngb+" x "+(ntime*nc)+"] shifting by ["+nstep+" x "+tstep+"]\n");
 		System.out.print("time steps: "+nsample+" (over "+nt+" time points)\n");
 		
+		/* set beforehand
 		// first get rid of all the masked values
 		int nmask = 0;
 		mask = new boolean[nxyz];
@@ -124,8 +143,10 @@ public class LocalContrastAndTimeDenoising {
 		    }
 		    if (mask[xyz]) nmask++;
 		}
+		*/
 		System.out.print("masking to "+(100.0*nmask/nxyz)+" percent of the image size\n");
 		
+		/*
 		// build index file
 		index = new int[nxyz];
 		int id=0;
@@ -136,8 +157,9 @@ public class LocalContrastAndTimeDenoising {
             } else {
                 index[xyz] = -1;
             }
-		}
+		}*/
 		
+		/*
 		// re-format the image array
 		float[][][] maskedImages = new float[nc][nmask][nt];
 		id=0;
@@ -147,7 +169,7 @@ public class LocalContrastAndTimeDenoising {
 		    }
 		}
 		images = null;
-		
+		*/
 		denoised = new float[nc][nmask][nt];
 		//eigvec = new float[nimg][nxyz];
 		//eigval = new float[nimg][nxyz];
@@ -202,7 +224,7 @@ public class LocalContrastAndTimeDenoising {
                             if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
                                 for (int ti=t;ti<t+ntime;ti++) for (int c=0;c<nc;c++) {
                                     //patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = images[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][ti];
-                                    patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti-t+c*ntime] = maskedImages[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
+                                    patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti-t+c*ntime] = images[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
                                 }
                             }
                         }
@@ -342,18 +364,20 @@ public class LocalContrastAndTimeDenoising {
                 errmap[ind][t] /= weights[ind][t];
             }
         }
-        maskedImages = null;
+        weights = null;
+        images = denoised;
         
-        images = new float[nc][nxyz][nt];
+       // images = new float[nc][nxyz][nt];
         globalpcadim = new float[nt*nxyz];
-        globalerrmap = new float[nt*nxyz];
+        globalerrmap = new float[nxyz];
         for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+            globalerrmap[xyz] = 1.0f;
             for (int t=0;t<nt;t++) {
-                for (int c=0;c<nc;c++) {
-                    images[c][xyz][t] = denoised[c][index[xyz]][t];
-                }
+                //for (int c=0;c<nc;c++) {
+                //    images[c][xyz][t] = denoised[c][index[xyz]][t];
+                //}
                 globalpcadim[xyz+t*nxyz] = pcadim[index[xyz]][t];
-                globalerrmap[xyz+t*nxyz] = errmap[index[xyz]][t];
+                globalerrmap[xyz] = Numerics.min(globalerrmap[xyz], errmap[index[xyz]][t]);
             }
         }
   		return;
