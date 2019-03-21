@@ -111,27 +111,30 @@ public class ConditionalShapeSegmentation {
 	        }
 	    }
 	}
-	public final void setConditionalMean(float[] val) {
+	public final void setConditionalMeanAndStdv(float[] mean, float[] stdv) {
 	    condmean = new double[nc][nobj][nobj];
-	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
-	        condmean[c][obj1][obj2] = val[obj1+obj2*nobj+c*nobj*nobj];
-	    }
-	}
-	public final void setConditionalStdv(float[] val) {
 	    condstdv = new double[nc][nobj][nobj];
-	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
-	        condstdv[c][obj1][obj2] = val[obj1+obj2*nobj+c*nobj*nobj];
+  		condpair = new boolean[nc][nobj][nobj];
+        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	        condmean[c][obj1][obj2] = mean[obj1+obj2*nobj+c*nobj*nobj];
+	        condstdv[c][obj1][obj2] = mean[obj1+obj2*nobj+c*nobj*nobj];
+	        if (condstdv[c][obj1][obj2]>0) condpair[c][obj1][obj2] = true;
+	        else condpair[c][obj1][obj2] = false;
 	    }
 	}
+
 	public final void setConditionalHistogram(float[] val, int n) {
 	    nbins = n;
 	    condhistogram = new double[nc][nobj][nobj][nbins];
 	    condmin = new double[nc][nobj][nobj];
 	    condmax = new double[nc][nobj][nobj];
+		condpair = new boolean[nc][nobj][nobj];
 	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
+	        condpair[c][obj1][obj2] = false;
 	        condmin[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*0+nobj*nobj*(nbins+2)*c];
 	        for (int bin=0;bin<nbins;bin++) {
 	            condhistogram[c][obj1][obj2][bin] = val[obj2+obj1*nobj+nobj*nobj*(bin+1)+nobj*nobj*(nbins+2)*c];
+	            if (condhistogram[c][obj1][obj2][bin]>0) condpair[c][obj1][obj2] = true;
 	        }
 	        condmax[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*(nbins+1)+nobj*nobj*(nbins+2)*c];
 	    }
@@ -944,6 +947,7 @@ public class ConditionalShapeSegmentation {
 		}
 		
 		// add a local diffusion step?
+		System.out.print("Diffusion step: \n");
 		
 		// graph = N-most likely neihgbors (based on target intensity)
 		int nngb = 6;
@@ -955,8 +959,8 @@ public class ConditionalShapeSegmentation {
 		    idmap[xyz] = id;
 		    id++;
 		}
-		
-		
+			
+		System.out.print("Build neighborhood\n");
 		float[][] ngbw = new float[nngb+1][ndata];
 		int[][] ngbi = new int[nngb][ndata];
 		float[] ngbsim = new float[26];
@@ -991,16 +995,21 @@ public class ConditionalShapeSegmentation {
                     
                     ngbsim[best] = 0.0f;
                 }
+                if (ngbw[nngb][id]==0) System.out.print("0");
                 
             }
         }  
-		
+		System.out.print("\n");
 		// diffusion only between i|j <-> i|j, i|j <-> i|k, i|j <-> j|i
 		
 		float[][] diffusedProbas = new float[nbest][ndata]; 
 		int[][] diffusedLabels = new int[nbest][ndata];
+		
+		// first copy the originals, then iterate on the copy?
+		
 		for (int t=0;t<maxiter;t++) {
-            for (id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
+		    System.out.print("Diffusion step"+t+"\n");
+		    for (id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
                 double[][] diffused = new double[nobj][nobj];
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                     diffused[obj1][obj2] = 0.0;
@@ -1021,10 +1030,12 @@ public class ConditionalShapeSegmentation {
                             for (int best=0;best<nbest;best++) {
                                 if ( (finalLabels[best][ngb]>100*(obj1+1) &&  finalLabels[best][ngb]<100*(obj1+2))
                                     || finalLabels[best][ngb]==100*(obj2+1)+(obj1+1) ) {
+                                        // if transition probabilities are to be used it would be here
                                         ngbmax = Numerics.max(ngbmax, finalProbas[best][ngb]);
                                         best = nbest;
                                 }
                             }
+                            if (ngbmax==0) System.out.print("0");
                             diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
                             den += ngbw[n][id];
                         }
@@ -1053,7 +1064,7 @@ public class ConditionalShapeSegmentation {
                 if (finalLabels[best][id] == diffusedLabels[best][id]) {
                     diff += Numerics.abs(diffusedProbas[best][id]-finalProbas[best][id]);
                 } else {
-                    diff += 2*Numerics.abs(diffusedProbas[best][id]-finalProbas[best][id]);
+                    diff += Numerics.abs(diffusedProbas[best][id]-finalProbas[best][id]);
                 }
                 finalLabels[best][id] = diffusedLabels[best][id];
                 finalProbas[best][id] = diffusedProbas[best][id];
