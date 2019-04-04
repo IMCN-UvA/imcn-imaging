@@ -112,10 +112,10 @@ public class LocalComplexPCADenoising {
 	public final void setResolutions(float x, float y, float z) { rx=x; ry=y; rz=z; }
 	public final void setResolutions(float[] res) { rx=res[0]; ry=res[1]; rz=res[2]; }
 
-	public final String getPackage() { return "CBS Tools"; }
+	public final String getPackage() { return "MICN Toolkit"; }
 	public final String getCategory() { return "Intensity.devel"; } 
-	public final String getLabel() { return "Complex PCA denoising"; }
-	public final String getName() { return "Complex PCA denoising"; }
+	public final String getLabel() { return "Local Complex PCA denoising"; }
+	public final String getName() { return "Local Complex PCA denoising"; }
 
 	public final String[] getAlgorithmAuthors() { return new String[]{"Pierre-Louis Bazin"}; }
 	public final String getAffiliation() { return "Integrated Model-based Cognitive Neuroscience Reseaerch Unit, Universiteit van Amsterdam"; }
