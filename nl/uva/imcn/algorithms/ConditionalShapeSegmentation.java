@@ -773,7 +773,7 @@ public class ConditionalShapeSegmentation {
                 vols[sub] = 0.0f;
                 for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
                     if (levelsets[sub][obj][xyz]<0) {
-                        vols[sub]++;
+                        vols[sub]+=rx*ry*rz;
                     }
                 }
                 objVolumeMean[obj] += vols[sub]/nsub;
@@ -1273,7 +1273,7 @@ public class ConditionalShapeSegmentation {
                     bestvol[obj] = vol[obj];
                 }
                 // update the values
-                vol[obj]++;
+                vol[obj]+= rx*ry*rz;
                 labels[idmap[xyz]] = obj;
                 prev[obj] = score;
                 
@@ -1321,7 +1321,7 @@ public class ConditionalShapeSegmentation {
             if (labels[idmap[xyz]]==0) {
                 if (vol[obj]<bestvol[obj]) {
                     // update the values
-                    vol[obj]++;
+                    vol[obj]+=rx*ry*rz;
                     labels[idmap[xyz]] = obj;
                 
                     // add neighbors

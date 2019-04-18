@@ -31,6 +31,7 @@ public class LocalComplexPCADenoising {
 	private     boolean     eigen = false;
 	//private     boolean     tvmag = false;
 	//private     boolean     tvphs = false;
+	private     boolean     slab2D = false;
 	
 	//public static final String[]     thresholdingTypes = {"Eigenvalues","Global noise","Second half"};
 	//private     String      thresholding = "Second half";
@@ -102,6 +103,7 @@ public class LocalComplexPCADenoising {
 	public final void setPatchSize(int in) { ngbSize = in; }
 	public final void setWindowSize(int in) { winSize = in; }
 	public final void setUnwrapPhase(boolean in) { unwrap = in; }
+	public final void setProcessSlabIn2D(boolean in) { slab2D = in; }
 	
 	//public final void setMagnitudeTVSubtraction(boolean in) { tvmag = in; }
 	//public final void setPhaseTVSubtraction(boolean in) { tvphs = in; }
@@ -274,6 +276,8 @@ public class LocalComplexPCADenoising {
 		int ntime2 = 2*ntime;
 		int tstep = Numerics.floor(ntime/2.0);
 		int nsample = Numerics.ceil(nimg/tstep);
+		int nstepZ = nstep;
+		if (slab2D) nstepZ = 1;
         System.out.print("patch dimensions ["+ngb+" x "+ntime+"] shifting by ["+nstep+" x "+tstep+"]\n");
 		if (timeWindow) System.out.print("time steps: "+nsample+" (over "+nimg+" time points)\n");
 		 
@@ -308,29 +312,50 @@ public class LocalComplexPCADenoising {
             }
             if (!skip) {
                 if (timeWindow) System.out.print("...\n");
-                for (int x=0;x<nx;x+=nstep) for (int y=0;y<ny;y+=nstep) for (int z=0;z<nz;z+=nstep) {
+                for (int x=0;x<nx;x+=nstep) for (int y=0;y<ny;y+=nstep) for (int z=0;z<nz;z+=nstepZ) {
                     int ngbx = Numerics.min(ngb, nx-x);
                     int ngby = Numerics.min(ngb, ny-y);
                     int ngbz = Numerics.min(ngb, nz-z);
+                    int ngb2 = ngbx*ngby;
                     int ngb3 = ngbx*ngby*ngbz;
                     boolean process = false;
-                    if (ngb3<ntime2) {
-                        System.out.print("!patch is too small!\n");
-                        process = false;
+                    if (slab2D) {
+                        if (ngb2<ntime2) {
+                            System.out.print("!patch is too small!\n");
+                            process = false;
+                        } else {
+                            process = true;
+                        }
                     } else {
-                        process = true;
+                        if (ngb3<ntime2) {
+                            System.out.print("!patch is too small!\n");
+                            process = false;
+                        } else {
+                            process = true;
+                        }
                     }
                     if (process) {
-                        double[][] patch = new double[ngb3][ntime2];
-                        for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) for (int i=2*t;i<2*t+ntime2;i++) {
-                            patch[dx+ngbx*dy+ngbx*ngby*dz][i-2*t] = images[i][x+dx+nx*(y+dy)+nx*ny*(z+dz)];
+                        double[][] patch;
+                        int ngbN;
+                        if (slab2D) {
+                            ngbN=ngb2;
+                            patch = new double[ngb2][ntime2];
+                            for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int i=2*t;i<2*t+ntime2;i++) {
+                                patch[dx+ngbx*dy][i-2*t] = images[i][x+dx+nx*(y+dy)+nx*ny*z];
+                            }
+                        } else {
+                            ngbN = ngb3;
+                            patch = new double[ngb3][ntime2];
+                            for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) for (int i=2*t;i<2*t+ntime2;i++) {
+                                patch[dx+ngbx*dy+ngbx*ngby*dz][i-2*t] = images[i][x+dx+nx*(y+dy)+nx*ny*(z+dz)];
+                            }
                         }
                         // mean over samples
                         double[] mean = new double[ntime2];
                         for (int i=0;i<ntime2;i++) {
-                           for (int n=0;n<ngb3;n++) mean[i] += patch[n][i];
-                           mean[i] /= (double)ngb3;
-                           for (int n=0;n<ngb3;n++) patch[n][i] -= mean[i];
+                           for (int n=0;n<ngbN;n++) mean[i] += patch[n][i];
+                           mean[i] /= (double)ngbN;
+                           for (int n=0;n<ngbN;n++) patch[n][i] -= mean[i];
                         }
                         // PCA from SVD X = USVt
                         //System.out.println("perform SVD");
@@ -340,10 +365,10 @@ public class LocalComplexPCADenoising {
                         // estimate noise
                         // simple version: compute the standard deviation of the patch
                         double sigma = 0.0;
-                        for (int n=0;n<ngb3;n++) for (int i=0;i<ntime2;i++) {
+                        for (int n=0;n<ngbN;n++) for (int i=0;i<ntime2;i++) {
                             sigma += patch[n][i]*patch[n][i];
                         }
-                        sigma /= ntime2*ngb3;
+                        sigma /= ntime2*ngbN;
                         sigma = FastMath.sqrt(sigma);
                         
                         // cutoff
@@ -411,7 +436,7 @@ public class LocalComplexPCADenoising {
                         // reconstruct
                         Matrix U = svd.getU();
                         Matrix V = svd.getV();
-                        for (int n=0;n<ngb3;n++) for (int i=0;i<ntime2;i++) {
+                        for (int n=0;n<ngbN;n++) for (int i=0;i<ntime2;i++) {
                             // Sum_s>0 s_kU_kV_kt
                             patch[n][i] = mean[i];
                             for (int j=0;j<ntime2;j++) if (used[j]) {
