@@ -321,14 +321,14 @@ public class LocalComplexPCADenoising {
                     boolean process = false;
                     if (slab2D) {
                         if (ngb2<ntime2) {
-                            System.out.print("!patch is too small!\n");
+                            //System.out.print("!patch is too small!\n");
                             process = false;
                         } else {
                             process = true;
                         }
                     } else {
                         if (ngb3<ntime2) {
-                            System.out.print("!patch is too small!\n");
+                            //System.out.print("!patch is too small!\n");
                             process = false;
                         } else {
                             process = true;

@@ -120,6 +120,8 @@ public class ConditionalShapeSegmentation {
 	public final void setShapeAtlasProbasAndLabels(float[] pval, int[] lval) {
 	    // first estimate ndata
 	    ndata = 0;
+	    System.out.println("image size: "+nx+" x "+ny+" x "+nz+" ("+nxyz+")");
+	    System.out.println("center label data: "+lval[nx/2+nx*ny/2+nx*ny*nz/2]);
 	    for (int xyz=0;xyz<nxyz;xyz++) if (lval[xyz]>0) ndata++;
 	    System.out.println("work region size: "+ndata);
 	    spatialProbas = new float[nbest][ndata];
@@ -196,14 +198,14 @@ public class ConditionalShapeSegmentation {
 	//public final void setCorrectSkeletonTopology(boolean val) { topoParam=val; }
 	//public final void setTopologyLUTdirectory(String val) { lutdir = val; }
 
-	public final void setDimensions(int x, int y, int z) { nx=x; ny=y; nz=z; nxyz=nx*ny*nz; }
-	public final void setDimensions(int[] dim) { nx=dim[0]; ny=dim[1]; nz=dim[2]; nxyz=nx*ny*nz; }
+	public final void setAtlasDimensions(int x, int y, int z) { nx=x; ny=y; nz=z; nxyz=nx*ny*nz; }
+	public final void setAtlasDimensions(int[] dim) { nx=dim[0]; ny=dim[1]; nz=dim[2]; nxyz=nx*ny*nz; }
 	
-	public final void setResolutions(float x, float y, float z) { rx=x; ry=y; rz=z; }
-	public final void setResolutions(float[] res) { rx=res[0]; ry=res[1]; rz=res[2]; }
+	public final void setAtlasResolutions(float x, float y, float z) { rx=x; ry=y; rz=z; }
+	public final void setAtlasResolutions(float[] res) { rx=res[0]; ry=res[1]; rz=res[2]; }
 	
-	public final void setTargetDimensions(int x, int y, int z) { ntx=x; nty=y; ntz=z; ntxyz=nx*ny*nz; }
-	public final void setTargetDimensions(int[] dim) { ntx=dim[0]; nty=dim[1]; ntz=dim[2]; ntxyz=nx*ny*nz; }
+	public final void setTargetDimensions(int x, int y, int z) { ntx=x; nty=y; ntz=z; ntxyz=ntx*nty*ntz; }
+	public final void setTargetDimensions(int[] dim) { ntx=dim[0]; nty=dim[1]; ntz=dim[2]; ntxyz=ntx*nty*ntz; }
 	
 	public final void setTargetResolutions(float x, float y, float z) { rtx=x; rty=y; rtz=z; }
 	public final void setTargetResolutions(float[] res) { rtx=res[0]; rty=res[1]; rtz=res[2]; }
@@ -319,7 +321,7 @@ public class ConditionalShapeSegmentation {
         }
         return images;
 	}
-	public final int[] getFinalLabeling() { return finalLabel; }
+	public final int[] getFinalLabel() { return finalLabel; }
 	
 	public final float[] getFinalProba() { return finalProba; }
 	
@@ -839,7 +841,9 @@ public class ConditionalShapeSegmentation {
 		if (map2atlas!=null) {
 		    target = new float[nc][nxyz];
 		    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		        int idx = Numerics.round(map2atlas[xyz]) + nx*Numerics.round(map2atlas[xyz+nxyz]) + nx*ny*Numerics.round(map2atlas[xyz+2*nxyz]);
+		        int idx = Numerics.bounded(Numerics.round(map2atlas[xyz]),0,ntx-1)
+		                + ntx*Numerics.bounded(Numerics.round(map2atlas[xyz+nxyz]),0,nty-1)
+		                + ntx*nty*Numerics.bounded(Numerics.round(map2atlas[xyz+2*nxyz]),0,ntz-1);
 		        for (int c=0;c<nc;c++) target[c][xyz] = targetImages[c][idx];
 		    }
 		    // replace original data for further processing
@@ -1268,7 +1272,7 @@ public class ConditionalShapeSegmentation {
                 double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
                 
                 double pstop = pvol*pdiff;
-                if (pstop>bestproba[obj]) {
+                if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
                     bestproba[obj] = pstop;
                     bestvol[obj] = vol[obj];
                 }
@@ -1304,6 +1308,10 @@ public class ConditionalShapeSegmentation {
                 }
             }
         }
+        System.out.println("Average volumes: ");
+        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
+        System.out.println("\nOptimized volumes: ");
+        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
         // re-run one last time to get the segmentation
         heap.reset();
         for (int obj=0;obj<nobj;obj++) {
@@ -1395,7 +1403,9 @@ public class ConditionalShapeSegmentation {
 		    // find highest scoring voxel as starting point
             for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
                 int idx = x+ntx*y+ntx*nty*z;
-                int xyz = Numerics.round(map2target[idx])+nx*Numerics.round(map2target[idx+ntxyz])+nx*ny*Numerics.round(map2target[idx+2*ntxyz]);
+                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
                 if (mask[xyz]) {
                     int id = idmap[xyz];
                     if (combinedLabels[0][id]==obj) {
@@ -1421,7 +1431,9 @@ public class ConditionalShapeSegmentation {
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
             int idx = heap.getFirstId();
-            int xyz = Numerics.round(map2target[idx])+nx*Numerics.round(map2target[idx+ntxyz])+nx*ny*Numerics.round(map2target[idx+2*ntxyz]);
+            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[idx]==0) {
@@ -1432,7 +1444,7 @@ public class ConditionalShapeSegmentation {
                 double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
                 
                 double pstop = pvol*pdiff;
-                if (pstop>bestproba[obj]) {
+                if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
                     bestproba[obj] = pstop;
                     bestvol[obj] = vol[obj];
                 }
@@ -1446,7 +1458,9 @@ public class ConditionalShapeSegmentation {
                     // add neighbors
                     for (byte k = 0; k<6; k++) {
                         int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                        int ngb = Numerics.round(map2target[idn])+nx*Numerics.round(map2target[idn+ntxyz])+nx*ny*Numerics.round(map2target[idn+2*ntxyz]);
+                        int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
+                                + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
+                                + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
                         if (mask[ngb]) {
                             if (labels[idn]==0) {
                                 for (int best=0;best<nbest;best++) {
@@ -1469,6 +1483,10 @@ public class ConditionalShapeSegmentation {
                 }
             }
         }
+        System.out.println("Average volumes: ");
+        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
+        System.out.println("\nOptimized volumes: ");
+        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
         // re-run one last time to get the segmentation
         heap.reset();
         for (int obj=0;obj<nobj;obj++) {
@@ -1481,7 +1499,9 @@ public class ConditionalShapeSegmentation {
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
             int idx = heap.getFirstId();
-            int xyz = Numerics.round(map2target[idx])+nx*Numerics.round(map2target[idx+ntxyz])+nx*ny*Numerics.round(map2target[idx+2*ntxyz]);
+            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[idx]==0) {
@@ -1493,7 +1513,9 @@ public class ConditionalShapeSegmentation {
                     // add neighbors
                     for (byte k = 0; k<6; k++) {
                         int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                        int ngb = Numerics.round(map2target[idn])+nx*Numerics.round(map2target[idn+ntxyz])+nx*ny*Numerics.round(map2target[idn+2*ntxyz]);
+                        int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
+                                + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
+                                + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
                         if (mask[ngb]) {
                             if (labels[idn]==0) {
                                 for (int best=0;best<nbest;best++) {
@@ -1523,7 +1545,9 @@ public class ConditionalShapeSegmentation {
         float[] kept = new float[nobj];
         for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
             int idx = x+ntx*y+ntx*nty*z;
-            int xyz = Numerics.round(map2target[idx])+nx*Numerics.round(map2target[idx+ntxyz])+nx*ny*Numerics.round(map2target[idx+2*ntxyz]);
+            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
             if (mask[xyz]) {
                 int id = idmap[xyz];
                 int obj = labels[idx];
