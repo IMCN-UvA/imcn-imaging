@@ -44,6 +44,16 @@ public class StackIntensityRegularisation {
 	    // per slice:
 	    double[] differences = new double [nx*ny];
 	    int ndiff = 0;
+	    double minbias = 0;
+	    double maxbias = 0;
+	    double minfactor = 1;
+	    double maxfactor = 1;
+	    double minfit = 1;
+	    int minbiasid = -1;
+	    int maxbiasid = -1;
+	    int minfactorid = -1;
+	    int maxfactorid = -1;
+	    int minfitid = -1;
 	    for (int z=1;z<nz;z++) {
 	        System.out.println("Processing slice "+z);
 	        ndiff = 0;
@@ -122,9 +132,14 @@ public class StackIntensityRegularisation {
                     }
                     double rsquare = 1.0;
                     if (variance>0) rsquare = Numerics.max(1.0 - (residual/variance), 0.0);
-                    System.out.println("bias: "+val.get(0,0));
-                    System.out.println("scaling: "+val.get(1,0));
-                    System.out.println("residuals R^2: "+rsquare);
+                    //System.out.println("bias: "+val.get(0,0));
+                    //System.out.println("scaling: "+val.get(1,0));
+                    //System.out.println("residuals R^2: "+rsquare);
+                    if (val.get(0,0)>maxbias) { maxbias = val.get(0,0); maxbiasid = z; }
+                    if (val.get(0,0)<minbias) { minbias = val.get(0,0); minbiasid = z; }
+                    if (val.get(1,0)>maxfactor) { maxfactor = val.get(1,0); maxfactorid = z; }
+                    if (val.get(1,0)<minfactor) { minfactor = val.get(1,0); minfactorid = z; }
+                    if (rsquare<minfit) { minfit = rsquare; minfitid = z; }
                 } else {
                     System.out.println("no good data: skip");
                 }
@@ -132,6 +147,9 @@ public class StackIntensityRegularisation {
                 System.out.println("empty mask overlap: skip");
             }
         }
+        System.out.println("bias: ["+minbias+" ("+minbiasid+"), "+maxbias+" ("+maxbiasid+"]");
+        System.out.println("scaling: ["+minfactor+" ("+minfactorid+"), "+maxfactor+" ("+maxfactorid+"]");
+        System.out.println("min residuals R^2: "+minfit+" ("+minfitid+")");
 	    // provide a global stabilisation? e.g. do the same process from the other direction?
 	    // shouldn't be needed, hopefully..
 	    regularised = image;
