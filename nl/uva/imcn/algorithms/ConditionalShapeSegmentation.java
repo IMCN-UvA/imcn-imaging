@@ -120,26 +120,61 @@ public class ConditionalShapeSegmentation {
 	public final void setShapeAtlasProbasAndLabels(float[] pval, int[] lval) {
 	    // first estimate ndata
 	    ndata = 0;
-	    System.out.println("image size: "+nx+" x "+ny+" x "+nz+" ("+nxyz+")");
-	    System.out.println("center label data: "+lval[nx/2+nx*ny/2+nx*ny*nz/2]);
-	    for (int xyz=0;xyz<nxyz;xyz++) if (lval[xyz]>0) ndata++;
-	    System.out.println("work region size: "+ndata);
-	    spatialProbas = new float[nbest][ndata];
-	    spatialLabels = new int[nbest][ndata];
-	    if (mask==null) mask = new boolean[nxyz]; 
-	    int id=0;
-	    for (int xyz=0;xyz<nxyz;xyz++) {
-	        if (lval[xyz]>0) {
-                mask[xyz] = true;
-                for (int best=0;best<nbest;best++) {
-                    spatialProbas[best][id] = pval[xyz+best*nxyz];
-                    spatialLabels[best][id] = lval[xyz+best*nxyz];
-                }
-                id++;
-            } else {
-                mask[xyz] = false;
+	    System.out.println("atlas size: "+nx+" x "+ny+" x "+nz+" ("+nxyz+")");
+	    
+	    if (map2target!=null) {
+	        System.out.println("image size: "+ntx+" x "+nty+" x "+ntz+" ("+ntxyz+")");
+            for (int x=0;x<ntx;x++) for (int y=0;y<nty;y++) for (int z=0;z<ntz;z++) {
+                int idx = x+ntx*y+ntx*nty*z;
+                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                if (lval[xyz]>0) ndata++;
             }
-	    }
+            System.out.println("work region size: "+ndata);
+            spatialProbas = new float[nbest][ndata];
+            spatialLabels = new int[nbest][ndata];
+            mask = new boolean[ntxyz]; 
+            int id=0;
+            for (int x=0;x<ntx;x++) for (int y=0;y<nty;y++) for (int z=0;z<ntz;z++) {
+                int idx = x+ntx*y+ntx*nty*z;
+                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                if (lval[xyz]>0) {
+                    mask[idx] = true;
+                    for (int best=0;best<nbest;best++) {
+                        spatialProbas[best][id] = pval[xyz+best*nxyz];
+                        spatialLabels[best][id] = lval[xyz+best*nxyz];
+                    }
+                    id++;
+                } else {
+                    mask[idx] = false;
+                }
+            }
+            nx = ntx; ny = nty; nz = ntz; nxyz = ntxyz;
+            map2target = null;
+            map2atlas = null;
+	    } else {
+            for (int xyz=0;xyz<nxyz;xyz++) if (lval[xyz]>0) ndata++;
+            System.out.println("work region size: "+ndata);
+            spatialProbas = new float[nbest][ndata];
+            spatialLabels = new int[nbest][ndata];
+            mask = new boolean[nxyz]; 
+            int id=0;
+            for (int xyz=0;xyz<nxyz;xyz++) {
+                if (lval[xyz]>0) {
+                    mask[xyz] = true;
+                    for (int best=0;best<nbest;best++) {
+                        spatialProbas[best][id] = pval[xyz+best*nxyz];
+                        spatialLabels[best][id] = lval[xyz+best*nxyz];
+                    }
+                    id++;
+                } else {
+                    mask[xyz] = false;
+                }
+            }
+        }
 	}
 	public final void setConditionalMeanAndStdv(float[] mean, float[] stdv) {
 	    condmean = new double[nc][nobj][nobj];
