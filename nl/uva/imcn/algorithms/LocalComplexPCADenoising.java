@@ -490,7 +490,8 @@ public class LocalComplexPCADenoising {
   		for (int i=0;i<nimg;i++) {
             for (int xyz=0;xyz<nxyz;xyz++) {
                 invmag[i][xyz] = (float)FastMath.sqrt(denoised[2*i][xyz]*denoised[2*i][xyz]+denoised[2*i+1][xyz]*denoised[2*i+1][xyz]);
-                invphs[i][xyz] = (float)(FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz])*phsscale[i]);
+                //invphs[i][xyz] = (float)(FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz])*phsscale[i]);
+                invphs[i][xyz] = (float)FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz]);
              }
         }
         
