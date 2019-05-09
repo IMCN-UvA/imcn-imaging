@@ -207,19 +207,22 @@ public class LocalComplexPCADenoising {
 		// we assume 4D images of size nimg
 		if (invmag==null || invphs==null) System.out.print("data stacks not properly initialized!\n");
 		
-		double phsscale = 1.0;
+		double[] phsscale = new double[nimg];
+		for (int i=0;i<nimg;i++) phsscale[i] = 1.0;
 		float[][] tvimgphs = null;
         if (unwrap) {
             // renormalize phase
-            float phsmin = invphs[0][0];
-            float phsmax = invphs[0][0];
+            float[] phsmin = new float[nimg];
+            float[] phsmax = new float[nimg];
             for (int i=0;i<nimg;i++) {
+                phsmin[i] = invphs[i][0];
+                phsmax[i] = invphs[i][0];
                 for (int xyz=0;xyz<nxyz;xyz++) {
-                    if (invphs[i][xyz]<phsmin) phsmin = invphs[i][xyz];
-                    if (invphs[i][xyz]>phsmax) phsmax = invphs[i][xyz];
+                    if (invphs[i][xyz]<phsmin[i]) phsmin[i] = invphs[i][xyz];
+                    if (invphs[i][xyz]>phsmax[i]) phsmax[i] = invphs[i][xyz];
                 }
+                phsscale[i] = (phsmax[i]-phsmin[i])/(2.0*FastMath.PI);
             }
-            phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
             
             // unwrap phase and remove TV global variations
             //if (tvphs) {
@@ -237,7 +240,7 @@ public class LocalComplexPCADenoising {
                 unwrap.setTVPostProcessing("TV-approximation");
                 unwrap.execute();
                 tvimgphs[i] = unwrap.getCorrectedImage();
-                for (int xyz=0;xyz<nxyz;xyz++) invphs[i][xyz] = (float)(invphs[i][xyz]/phsscale - tvimgphs[i][xyz]);
+                for (int xyz=0;xyz<nxyz;xyz++) invphs[i][xyz] = (float)(invphs[i][xyz]/phsscale[i] - tvimgphs[i][xyz]);
             }
         } else {
             // still do the TV global variation removal
@@ -487,7 +490,7 @@ public class LocalComplexPCADenoising {
   		for (int i=0;i<nimg;i++) {
             for (int xyz=0;xyz<nxyz;xyz++) {
                 invmag[i][xyz] = (float)FastMath.sqrt(denoised[2*i][xyz]*denoised[2*i][xyz]+denoised[2*i+1][xyz]*denoised[2*i+1][xyz]);
-                invphs[i][xyz] = (float)(FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz])*phsscale);
+                invphs[i][xyz] = (float)(FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz])*phsscale[i]);
              }
         }
         
@@ -513,7 +516,7 @@ public class LocalComplexPCADenoising {
         for (int i=0;i<nimg;i++) for (int xyz=0;xyz<nxyz;xyz++) {
             invphs[i][xyz] += tvimgphs[i][xyz];
             // wrap around phase values?
-            invphs[i][xyz] = (float)(Numerics.modulo(invphs[i][xyz], 2.0*FastMath.PI)*phsscale);
+            invphs[i][xyz] = (float)(Numerics.modulo(invphs[i][xyz], 2.0*FastMath.PI)*phsscale[i]);
         }
 	}
 
