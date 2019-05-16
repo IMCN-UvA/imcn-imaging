@@ -29,7 +29,7 @@ public class ConditionalShapeSegmentation {
 	private int nsub;
 	private int nobj;
 	private int nc;
-	private int nbest = 16;
+	private int nbest = 4;
 	
 	private float deltaIn = 2.0f;
 	private float deltaOut = 0.0f;
@@ -91,6 +91,9 @@ public class ConditionalShapeSegmentation {
 	private float[]    map2atlas = null;
 	private float[]    map2target = null;
 	
+	private int nax, nay, naz, naxyz;
+	private float rax, ray, raz;
+
 	private int ntx, nty, ntz, ntxyz;
 	private float rtx, rty, rtz;
 
@@ -120,60 +123,88 @@ public class ConditionalShapeSegmentation {
 	public final void setShapeAtlasProbasAndLabels(float[] pval, int[] lval) {
 	    // first estimate ndata
 	    ndata = 0;
-	    System.out.println("atlas size: "+nx+" x "+ny+" x "+nz+" ("+nxyz+")");
+	    System.out.println("atlas size: "+nax+" x "+nay+" x "+naz+" ("+naxyz+")");
 	    
 	    if (map2target!=null) {
 	        System.out.println("image size: "+ntx+" x "+nty+" x "+ntz+" ("+ntxyz+")");
-            for (int x=0;x<ntx;x++) for (int y=0;y<nty;y++) for (int z=0;z<ntz;z++) {
-                int idx = x+ntx*y+ntx*nty*z;
-                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-                if (lval[xyz]>0) ndata++;
-            }
-            System.out.println("work region size: "+ndata);
-            spatialProbas = new float[nbest][ndata];
-            spatialLabels = new int[nbest][ndata];
             mask = new boolean[ntxyz]; 
-            int id=0;
-            for (int x=0;x<ntx;x++) for (int y=0;y<nty;y++) for (int z=0;z<ntz;z++) {
-                int idx = x+ntx*y+ntx*nty*z;
-                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+            for (int xt=0;xt<ntx;xt++) for (int yt=0;yt<nty;yt++) for (int zt=0;zt<ntz;zt++) {
+                int idx = xt + ntx*yt + ntx*nty*zt;
+                int xa = Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nax-1);
+                int ya = Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,nay-1);
+                int za = Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,naz-1);
+                //int xyz =       Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nx-1)
+                //        +    nx*Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,ny-1)
+                //        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                int xyz = xa + nax*ya + nax*nay*za;
                 if (lval[xyz]>0) {
+                    ndata++;
                     mask[idx] = true;
-                    for (int best=0;best<nbest;best++) {
-                        spatialProbas[best][id] = pval[xyz+best*nxyz];
-                        spatialLabels[best][id] = lval[xyz+best*nxyz];
-                    }
-                    id++;
                 } else {
                     mask[idx] = false;
                 }
             }
+            System.out.println("work region size: "+ndata);
+            // build ID map
+            idmap = new int[ntxyz];
+            int id = 0;
+            for (int xyz=0;xyz<ntxyz;xyz++) if (mask[xyz]) {
+                idmap[xyz] = id;
+                id++;
+            }
+            // pass the probabilities USING the idmap
+            spatialProbas = new float[nbest][ndata];
+            spatialLabels = new int[nbest][ndata];
+            for (int xt=0;xt<ntx;xt++) for (int yt=0;yt<nty;yt++) for (int zt=0;zt<ntz;zt++) {
+                int idx = xt + ntx*yt + ntx*nty*zt;
+                if (mask[idx]) {
+                    int xa = Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nax-1);
+                    int ya = Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,nay-1);
+                    int za = Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,naz-1);
+                    //int xyz =       Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nx-1)
+                    //        +    nx*Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,ny-1)
+                    //        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                    int xyz = xa + nax*ya + nax*nay*za;
+
+                    for (int best=0;best<nbest;best++) {
+                        spatialProbas[best][idmap[xyz]] = pval[xyz+best*naxyz];
+                        spatialLabels[best][idmap[xyz]] = lval[xyz+best*naxyz];
+                    }
+                }
+            }
             nx = ntx; ny = nty; nz = ntz; nxyz = ntxyz;
+            rx = rtx; ry = rty; rz = rtz;
             map2target = null;
             map2atlas = null;
 	    } else {
-            for (int xyz=0;xyz<nxyz;xyz++) if (lval[xyz]>0) ndata++;
-            System.out.println("work region size: "+ndata);
-            spatialProbas = new float[nbest][ndata];
-            spatialLabels = new int[nbest][ndata];
             mask = new boolean[nxyz]; 
-            int id=0;
-            for (int xyz=0;xyz<nxyz;xyz++) {
+            for (int xyz=0;xyz<naxyz;xyz++) {
                 if (lval[xyz]>0) {
                     mask[xyz] = true;
-                    for (int best=0;best<nbest;best++) {
-                        spatialProbas[best][id] = pval[xyz+best*nxyz];
-                        spatialLabels[best][id] = lval[xyz+best*nxyz];
-                    }
-                    id++;
+                    ndata++;
                 } else {
                     mask[xyz] = false;
                 }
             }
+            System.out.println("work region size: "+ndata);
+            // build ID map
+            idmap = new int[ntxyz];
+            int id = 0;
+            for (int xyz=0;xyz<ntxyz;xyz++) if (mask[xyz]) {
+                idmap[xyz] = id;
+                id++;
+            }
+            // pass the probabilities USING the idmap
+            spatialProbas = new float[nbest][ndata];
+            spatialLabels = new int[nbest][ndata];
+            for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
+                for (int best=0;best<nbest;best++) {
+                    spatialProbas[best][idmap[xyz]] = pval[xyz+best*naxyz];
+                    spatialLabels[best][idmap[xyz]] = lval[xyz+best*naxyz];
+                }
+            }
+            nx = nax; ny = nay; nz = naz; nxyz = naxyz;
+            rx = rax; ry = ray; rz = raz;
         }
 	}
 	public final void setConditionalMeanAndStdv(float[] mean, float[] stdv) {
@@ -233,11 +264,11 @@ public class ConditionalShapeSegmentation {
 	//public final void setCorrectSkeletonTopology(boolean val) { topoParam=val; }
 	//public final void setTopologyLUTdirectory(String val) { lutdir = val; }
 
-	public final void setAtlasDimensions(int x, int y, int z) { nx=x; ny=y; nz=z; nxyz=nx*ny*nz; }
-	public final void setAtlasDimensions(int[] dim) { nx=dim[0]; ny=dim[1]; nz=dim[2]; nxyz=nx*ny*nz; }
+	public final void setAtlasDimensions(int x, int y, int z) { nax=x; nay=y; naz=z; naxyz=nax*nay*naz; }
+	public final void setAtlasDimensions(int[] dim) { nax=dim[0]; nay=dim[1]; naz=dim[2]; naxyz=nax*nay*naz; }
 	
-	public final void setAtlasResolutions(float x, float y, float z) { rx=x; ry=y; rz=z; }
-	public final void setAtlasResolutions(float[] res) { rx=res[0]; ry=res[1]; rz=res[2]; }
+	public final void setAtlasResolutions(float x, float y, float z) { rax=x; ray=y; raz=z; }
+	public final void setAtlasResolutions(float[] res) { rax=res[0]; ray=res[1]; raz=res[2]; }
 	
 	public final void setTargetDimensions(int x, int y, int z) { ntx=x; nty=y; ntz=z; ntxyz=ntx*nty*ntz; }
 	public final void setTargetDimensions(int[] dim) { ntx=dim[0]; nty=dim[1]; ntz=dim[2]; ntxyz=ntx*nty*ntz; }
@@ -264,24 +295,20 @@ public class ConditionalShapeSegmentation {
 	public final float[] getBestSpatialProbabilityMaps(int nval) {
 	    nval = Numerics.min(nval,nbest);
         float[] images = new float[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = spatialProbas[best][id];
+                images[xyz+best*nxyz] = spatialProbas[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
 	public final int[] getBestSpatialProbabilityLabels(int nval) {
         nval = Numerics.min(nval,nbest);
         int[] images = new int[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = spatialLabels[best][id];
+                images[xyz+best*nxyz] = spatialLabels[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
@@ -289,24 +316,20 @@ public class ConditionalShapeSegmentation {
 	public final float[] getBestIntensityProbabilityMaps(int nval) {
         nval = Numerics.min(nval,nbest);
         float[] images = new float[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = intensityProbas[best][id];
+                images[xyz+best*nxyz] = intensityProbas[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
 	public final int[] getBestIntensityProbabilityLabels(int nval) {
         nval = Numerics.min(nval,nbest);
         int[] images = new int[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = intensityLabels[best][id];
+                images[xyz+best*nxyz] = intensityLabels[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
@@ -314,45 +337,37 @@ public class ConditionalShapeSegmentation {
     public final float[] getBestProbabilityMaps(int nval) { 
         nval = Numerics.min(nval,nbest);
         float[] images = new float[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = combinedProbas[best][id];
+                images[xyz+best*nxyz] = combinedProbas[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
 	public final int[] getBestProbabilityLabels(int nval) { 
         nval = Numerics.min(nval,nbest);
         int[] images = new int[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = combinedLabels[best][id];
+                images[xyz+best*nxyz] = combinedLabels[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
 	
 	public final float[] getCertaintyProbability() { 
         float[] images = new float[nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		    images[xyz] = combinedProbas[0][id]-combinedProbas[1][id];
-            id++;
+		    images[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
         }
         return images;
 	}
     public final float[] getNeighborhoodMaps(int nval) { 
         float[] images = new float[nval*nxyz];
-		int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
-                images[xyz+best*nxyz] = ngbw[best][id];
+                images[xyz+best*nxyz] = ngbw[best][idmap[xyz]];
             }
-            id++;
         }
         return images;
 	}
@@ -404,7 +419,7 @@ public class ConditionalShapeSegmentation {
 	        computeAtlasPriors();
 	    }
 	    estimateTarget();
-	    strictSimilarityDiffusion(6);
+	    strictSimilarityDiffusion(4);
 	    collapseConditionalMaps();
     }	    
 	    
@@ -419,7 +434,8 @@ public class ConditionalShapeSegmentation {
             float[] background = new float[nxyz];
             boolean[] bgmask = new boolean[nxyz];
             for (int xyz=0;xyz<nxyz;xyz++) bgmask[xyz] = true;
- 
+            boundary = boundary/Numerics.max(rx,ry,rz);
+            
             for (int sub=0;sub<nsub;sub++) {
                 for (int xyz=0;xyz<nxyz;xyz++) {
                     float mindist = boundary;
@@ -458,6 +474,13 @@ public class ConditionalShapeSegmentation {
                 mask[xyz] = false;
             }
         }
+        // build ID map
+        idmap = new int[ntxyz];
+        int id = 0;
+        for (int xyz=0;xyz<ntxyz;xyz++) if (mask[xyz]) {
+            idmap[xyz] = id;
+            id++;
+        }
         System.out.println("masking: work region "+ndata+", compression: "+(ndata/(float)nxyz));
 		
         // adapt number of kept values?
@@ -470,7 +493,6 @@ public class ConditionalShapeSegmentation {
         int dev = Numerics.floor(nsub/4);
                     
 		double[] val = new double[nsub];
-		int id=0;
 		//double iqrsum=0, iqrden=0;
 		double stdsum=0, stdden=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
@@ -510,19 +532,18 @@ public class ConditionalShapeSegmentation {
 				// check if best is zero: give null label in that case
 				if (priors[best1][best2]>0) {
                     // sub optimal labeling, but easy to read
-                    spatialLabels[best][id] = 100*(best1+1)+(best2+1);
-                    spatialProbas[best][id] = (float)priors[best1][best2];
+                    spatialLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
+                    spatialProbas[best][idmap[xyz]] = (float)priors[best1][best2];
                 } else {
                     for (int b=best;b<nbest;b++) {
-                        spatialLabels[b][id] = 0;
-                        spatialProbas[b][id] = 0.0f;
+                        spatialLabels[b][idmap[xyz]] = 0;
+                        spatialProbas[b][idmap[xyz]] = 0.0f;
                     }
                     best = nbest;
                 }                    
                 // remove best value
                 priors[best1][best2] = 0.0;
  		    }
- 		    id++;
 		}
 		//System.out.println("mean spatial iqr: "+(iqrsum/iqrden));
 		System.out.println("mean spatial stdev: "+(stdsum/stdden));
@@ -552,7 +573,6 @@ public class ConditionalShapeSegmentation {
 		double[] cntsum = new double[nc];
 		double[] cntden = new double[nc];
 		val = new double[nsub];
-		id = 0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int c=0;c<nc;c++) {
                 for  (int sub=0;sub<nsub;sub++) {
@@ -563,10 +583,10 @@ public class ConditionalShapeSegmentation {
                 Percentile measure = new Percentile();
                 measure.setData(val);
 			
-                medc[c][id] = (float)measure.evaluate(50.0); 
-                //System.out.println("median "+medc[c][id]);
-                iqrc[c][id] = (float)(measure.evaluate(75.0) - measure.evaluate(25.0));
-                //System.out.println("iqr "+iqrc[c][id]);
+                medc[c][idmap[xyz]] = (float)measure.evaluate(50.0); 
+                //System.out.println("median "+medc[c][idmap[xyz]]);
+                iqrc[c][idmap[xyz]] = (float)(measure.evaluate(75.0) - measure.evaluate(25.0));
+                //System.out.println("iqr "+iqrc[c][idmap[xyz]]);
                 */
                 Numerics.sort(val);
                 double med, iqr;
@@ -577,13 +597,12 @@ public class ConditionalShapeSegmentation {
                     med = val[ctr];
                     iqr = val[ctr+dev] - val[ctr-dev];
                 }                   
-                medc[c][id] = (float)med;
-                iqrc[c][id] = (float)iqr;
+                medc[c][idmap[xyz]] = (float)med;
+                iqrc[c][idmap[xyz]] = (float)iqr;
                 
                 cntsum[c] += iqr;
                 cntden[c]++;
             }
-            id++;
         }
         for (int c=0;c<nc;c++) {
             System.out.println("mean iqr (contrast "+c+"): "+(cntsum[c]/cntden[c]));
@@ -610,15 +629,14 @@ public class ConditionalShapeSegmentation {
                 for (int c=0;c<nc;c++) {
                     boolean existsPair = false;
                     // use median intensities to estimate [min,max]
-                    id = 0;
                     for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                        double med = medc[c][id];
-                        double iqr = iqrc[c][id];
+                        double med = medc[c][idmap[xyz]];
+                        double iqr = iqrc[c][idmap[xyz]];
                         // assuming here that iqr==0 means masked regions
                         if (iqr>0) { 
                             // look only among non-zero priors for each region
                             for (int best=0;best<nbest;best++) {
-                                if (spatialLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                                if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
                                     // found value: proceeed
                                     if (med<condmin[c][obj1][obj2]) condmin[c][obj1][obj2] = med;
                                     if (med>condmax[c][obj1][obj2]) condmax[c][obj1][obj2] = med;
@@ -626,7 +644,6 @@ public class ConditionalShapeSegmentation {
                                 }
                             }
                         }
-                        id++;
                     }
                     if (existsPair) {
                         condpair[c][obj1][obj2] = true;
@@ -657,20 +674,19 @@ public class ConditionalShapeSegmentation {
 		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
 		        for (int c=0;c<nc;c++) {
 		            if (condpair[c][obj1][obj2]) {
-                        id = 0;
                         for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                            double med = medc[c][id];
-                            double iqr = iqrc[c][id];
+                            double med = medc[c][idmap[xyz]];
+                            double iqr = iqrc[c][idmap[xyz]];
                             // assuming here that iqr==0 means masked regions
                             if (iqr>0) { 
                                 // look for non-zero priors
                                 for (int best=0;best<nbest;best++) {
-                                    if (spatialLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                                    if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
                                         // found value: proceeed
                                         for (int sub=0;sub<nsub;sub++) {
                                             // adds uncertainties from mismatch between subject intensities and mean shape
                                             /*
-                                            double psub = spatialProbas[best][id]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
+                                            double psub = spatialProbas[best][idmap[xyz]]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
                                                                *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
                                             */
                                             double ldist = Numerics.max(levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn, 0.0);
@@ -686,7 +702,6 @@ public class ConditionalShapeSegmentation {
                                     }
                                 }
                             }
-                            id++;
                         }
                         // smooth histograms to avoid sharp edge effects
                         double var = 1.0*1.0;
@@ -720,15 +735,14 @@ public class ConditionalShapeSegmentation {
                    // System.out.println("..mean");
                    double sum = 0.0;
                    double den = 0.0;
-                   id = 0;
                    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                       double med = medc[c][id];
-                       double iqr = iqrc[c][id];
+                       double med = medc[c][idmap[xyz]];
+                       double iqr = iqrc[c][idmap[xyz]];
                        // assuming here that iqr==0 means masked regions
                        if (iqr>0) { 
                            // look for non-zero priors
                            for (int best=0;best<nbest;best++) {
-                               if (spatialLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                               if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
                                    // found value: proceeed
                                    for (int sub=0;sub<nsub;sub++) {
                                        // adds uncertainties from mismatch between subject intensities and mean shape
@@ -745,7 +759,6 @@ public class ConditionalShapeSegmentation {
                                }
                            }
                        }
-                       id++;
                    }
                    // build average
                    if (den>0) {
@@ -758,15 +771,14 @@ public class ConditionalShapeSegmentation {
                    }
                    //System.out.println("..stdev");
                    double var = 0.0;
-                   id = 0;
                    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                       double med = medc[c][id];
-                       double iqr = iqrc[c][id];
+                       double med = medc[c][idmap[xyz]];
+                       double iqr = iqrc[c][idmap[xyz]];
                        // assuming here that iqr==0 means masked regions
                        if (iqr>0) { 
                            // look for non-zero priors
                            for (int best=0;best<nbest;best++) {
-                               if (spatialLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                               if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
                                    // found value: proceeed
                                    for (int sub=0;sub<nsub;sub++) {
                                        // adds uncertainties from mismatch between subject intensities and mean shape
@@ -782,7 +794,6 @@ public class ConditionalShapeSegmentation {
                                }
                            }
                        }
-                       id++;
                    }
                    // build stdev
                    if (var==0) {
@@ -889,7 +900,6 @@ public class ConditionalShapeSegmentation {
 		
 		// combine priors and contrasts posteriors (update the priors maps)
 		for (int c=0;c<nc;c++) {
-            int id=0;
             for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
                double[][] likelihood = new double[nobj][nobj];
                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
@@ -903,14 +913,14 @@ public class ConditionalShapeSegmentation {
                         likelihood[obj1][obj2] = 0.0;
                     } else {                   
                        for (int best=0;best<nbest;best++) {
-                           if (spatialLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                           if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
                                // multiply nc times to balance prior and posterior
                                //likelihood[obj1][obj2] = 1.0;
-                               likelihood[obj1][obj2] = spatialProbas[best][id];
+                               likelihood[obj1][obj2] = spatialProbas[best][idmap[xyz]];
                                best = nbest;
                            }
                        }
-                    }
+                   }
                    if (likelihood[obj1][obj2]>0) {
                        if (condpair[c][obj1][obj2]) {
                            double pobjc;
@@ -946,28 +956,27 @@ public class ConditionalShapeSegmentation {
                     // now find the corresponding shape prior
                     double shapeprior = 1.0;
                     for (int sbest=0;sbest<nbest;sbest++) {
-                       if (spatialLabels[sbest][id]==100*(best1+1)+(best2+1)) {
-                           shapeprior = spatialProbas[sbest][id];
+                       if (spatialLabels[sbest][idmap[xyz]]==100*(best1+1)+(best2+1)) {
+                           shapeprior = spatialProbas[sbest][idmap[xyz]];
                            sbest = nbest;
                        }
                     }
                     // sub optimal labeling, but easy to read
-                    separateIntensLabels[c][best][id] = 100*(best1+1)+(best2+1);
-                    separateIntensProbas[c][best][id] = (float)(likelihood[best1][best2]/shapeprior);
+                    separateIntensLabels[c][best][idmap[xyz]] = 100*(best1+1)+(best2+1);
+                    separateIntensProbas[c][best][idmap[xyz]] = (float)(likelihood[best1][best2]/shapeprior);
                     // remove best value
                     likelihood[best1][best2] = 0.0;
                 }
-                id++;
-            }
+             }
             if (rescaleIntensities) {
                 // rescale top % in each shape and intensity priors
                 Percentile measure = new Percentile();
                 double[] val = new double[ndata];
-                for (id=0;id<ndata;id++) val[id] = separateIntensProbas[c][0][id];
+                for (int id=0;id<ndata;id++) val[id] = separateIntensProbas[c][0][id];
                 float intensMax = (float)measure.evaluate(val, top);
                 System.out.println("top "+top+"% intensity probability (contrast "+c+"): "+intensMax);
                 
-                for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
                     separateIntensProbas[c][best][id] = (float)Numerics.min(top/100.0*separateIntensProbas[c][best][id]/intensMax, 1.0f);
                 }
             }
@@ -976,7 +985,6 @@ public class ConditionalShapeSegmentation {
 		System.out.println("combine intensity probabilities");
 		intensityProbas = new float[nbest][ndata]; 
 		intensityLabels = new int[nbest][ndata];
-        int id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
             double[][] likelihood = new double[nobj][nobj];
             for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
@@ -984,8 +992,8 @@ public class ConditionalShapeSegmentation {
                for (int c=0;c<nc;c++) {
                    double val = 0.0;
                    for (int best=0;best<nbest;best++) {
-                       if (separateIntensLabels[c][best][id]==100*(obj1+1)+(obj2+1)) {
-                           val = separateIntensProbas[c][best][id];
+                       if (separateIntensLabels[c][best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
+                           val = separateIntensProbas[c][best][idmap[xyz]];
                            best = nbest;
                        }
                    }
@@ -1003,21 +1011,20 @@ public class ConditionalShapeSegmentation {
                     }
                 }
                 // sub optimal labeling, but easy to read
-                intensityLabels[best][id] = 100*(best1+1)+(best2+1);
+                intensityLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
                 // scaling for multiplicative intensities
-                intensityProbas[best][id] = (float)FastMath.pow(likelihood[best1][best2],1.0/nc);
+                intensityProbas[best][idmap[xyz]] = (float)FastMath.pow(likelihood[best1][best2],1.0/nc);
                 // remove best value
                 likelihood[best1][best2] = 0.0;
             }
-            id++;
         }
 		if (!rescaleIntensities && rescaleProbas) {
             Percentile measure = new Percentile();
             double[] val = new double[ndata];
-            for (id=0;id<ndata;id++) val[id] = intensityProbas[0][id];
+            for (int id=0;id<ndata;id++) val[id] = intensityProbas[0][id];
             float intensMax = (float)measure.evaluate(val, top);
             System.out.println("top "+top+"% global intensity probability: "+intensMax);
-            for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
                 intensityProbas[best][id] = (float)Numerics.min(top/100.0*intensityProbas[best][id]/intensMax, 1.0f);
             }		
 		}
@@ -1026,7 +1033,6 @@ public class ConditionalShapeSegmentation {
 		System.out.println("generate posteriors");
         combinedProbas = new float[nbest][ndata]; 
 		combinedLabels = new int[nbest][ndata];
-        id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    double[][] posteriors = new double[nobj][nobj];
 		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
@@ -1034,17 +1040,17 @@ public class ConditionalShapeSegmentation {
                 posteriors[obj1][obj2] = 0.0;
                 
                 for (int best=0;best<nbest;best++) {
-                    if (spatialLabels[best][id]==100*(obj1+1)+(obj2+1)) {
+                    if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
                         // multiply nc times to balance prior and posterior
-                        posteriors[obj1][obj2] = spatialProbas[best][id];
+                        posteriors[obj1][obj2] = spatialProbas[best][idmap[xyz]];
                         best = nbest;
                     }
                 }
                 if (posteriors[obj1][obj2]>0) {
                     double intensPrior = 0.0;
                     for (int best=0;best<nbest;best++) {
-                        if (intensityLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                            intensPrior = intensityProbas[best][id];
+                        if (intensityLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
+                            intensPrior = intensityProbas[best][idmap[xyz]];
                             best=nbest;
                         }
                     }
@@ -1062,12 +1068,11 @@ public class ConditionalShapeSegmentation {
                     }
                 }
                 // sub optimal labeling, but easy to read
-                combinedLabels[best][id] = 100*(best1+1)+(best2+1);
-                combinedProbas[best][id] = (float)FastMath.sqrt(posteriors[best1][best2]);
+                combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
+                combinedProbas[best][idmap[xyz]] = (float)FastMath.sqrt(posteriors[best1][best2]);
                 // remove best value
                 posteriors[best1][best2] = 0.0;
  		    }
- 		    id++;
 		}
 		
 	}
@@ -1102,7 +1107,7 @@ public class ConditionalShapeSegmentation {
                     }
                 }
                 // sub optimal labeling, but easy to read
-                //combinedLabels[best][id] = 100*(best1+1)+(best2+1);
+                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
                 combinedLabels[best][id] = best1;
                 combinedProbas[best][id] = (float)posteriors[best1][best2];
                 // remove best value
@@ -1117,14 +1122,6 @@ public class ConditionalShapeSegmentation {
 		// add a local diffusion step?
 		System.out.print("Diffusion step: \n");
 		
-		// build ID map
-		idmap = new int[nxyz];
-		int id = 0;
-		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		    idmap[xyz] = id;
-		    id++;
-		}
-
 		// graph = N-most likely neihgbors (based on target intensity)
 		System.out.print("Build similarity neighborhood\n");
  		ngbw = new float[nngb+1][ndata];
@@ -1174,7 +1171,7 @@ public class ConditionalShapeSegmentation {
 		int[][] diffusedLabels = new int[nbest][ndata];
 		
 		// first copy the originals, then iterate on the copy?
-		for (id=0;id<ndata;id++) {
+		for (int id=0;id<ndata;id++) {
 		    for (int best=0;best<nbest;best++) {
                 diffusedProbas[best][id] = combinedProbas[best][id];
                 diffusedLabels[best][id] = combinedLabels[best][id];
@@ -1183,7 +1180,7 @@ public class ConditionalShapeSegmentation {
 		    		
 		double[][] diffused = new double[nobj][nobj];
         for (int t=0;t<maxiter;t++) {
-		    for (id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
+		    for (int id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                     diffused[obj1][obj2] = 0.0;
                     
@@ -1239,12 +1236,12 @@ public class ConditionalShapeSegmentation {
                 }
             }
             double diff = 0.0;
-            for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
                 if (combinedLabels[best][id] == diffusedLabels[best][id]) {
-                    //diff += Numerics.abs(diffusedProbas[best][id]-combinedProbas[best][id]);
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
                     diff += 0.0;
                 } else {
-                    //diff += Numerics.abs(diffusedProbas[best][id]-combinedProbas[best][id]);
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
                     diff += 1.0;
                 }
                 combinedLabels[best][id] = diffusedLabels[best][id];
@@ -1274,12 +1271,12 @@ public class ConditionalShapeSegmentation {
                 int xyz=x+nx*y+nx*ny*z;
                 if (mask[xyz]) {
                     int id = idmap[xyz];
-                    if (combinedLabels[0][id]==obj) {
+                    if (combinedLabels[0][idmap[xyz]]==obj) {
                         float score;
                         if (certainty) {
-                            score = combinedProbas[0][id]-combinedProbas[1][id];
+                            score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
                         } else {
-                            score = combinedProbas[0][id];
+                            score = combinedProbas[0][idmap[xyz]];
                         }
                         if (score>bestscore[obj]) {
                             bestscore[obj] = score;
@@ -1321,20 +1318,22 @@ public class ConditionalShapeSegmentation {
                     // add neighbors
                     for (byte k = 0; k<6; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
-                        if (mask[ngb]) {
-                            if (labels[idmap[ngb]]==0) {
-                                for (int best=0;best<nbest;best++) {
-                                    if (combinedLabels[best][idmap[ngb]]==obj) {
-                                        if (certainty) {
-                                            if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        if (combinedLabels[best][idmap[ngb]]==obj) {
+                                            if (certainty) {
+                                                if (best==0) {
+                                                    heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
+                                                }
                                             } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
+                                                heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
                                             }
-                                        } else {
-                                            heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
+                                            best=nbest;
                                         }
-                                        best=nbest;
                                     }
                                 }
                             }
@@ -1370,23 +1369,25 @@ public class ConditionalShapeSegmentation {
                     // add neighbors
                     for (byte k = 0; k<6; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
-                        if (mask[ngb]) {
-                            if (labels[idmap[ngb]]==0) {
-                                for (int best=0;best<nbest;best++) {
-                                    if (combinedLabels[best][idmap[ngb]]==obj) {
-                                        if (certainty) {
-                                            if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        if (combinedLabels[best][idmap[ngb]]==obj) {
+                                            if (certainty) {
+                                                if (best==0) {
+                                                    heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
+                                                }
                                             } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
+                                                heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
                                             }
-                                        } else {
-                                            heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
+                                            best=nbest;
                                         }
-                                        best=nbest;
                                     }
                                 }
-                            }  
+                            }
                         }
                     }
                 }
@@ -1399,18 +1400,17 @@ public class ConditionalShapeSegmentation {
         for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
             int xyz = x+ntx*y+ntx*nty*z;
             if (mask[xyz]) {
-                int id = idmap[xyz];            
-                int obj = labels[id];
+                int obj = labels[idmap[xyz]];
                 for (int best=0;best<nbest;best++) {
-                    if (combinedLabels[best][id]==obj) {
+                    if (combinedLabels[best][idmap[xyz]]==obj) {
                         if (certainty) {
                             if (best==0) {
-                                finalProba[xyz] = combinedProbas[0][id]-combinedProbas[1][id];
+                                finalProba[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
                             } else {
-                                finalProba[xyz] = combinedProbas[best][id]-combinedProbas[0][id];
+                                finalProba[xyz] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
                             }
                         } else {
-                            finalProba[xyz] = combinedProbas[best][id];
+                            finalProba[xyz] = combinedProbas[best][idmap[xyz]];
                         }
                         best=nbest;
                     }
@@ -1442,13 +1442,12 @@ public class ConditionalShapeSegmentation {
                         + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
                         + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
                 if (mask[xyz]) {
-                    int id = idmap[xyz];
-                    if (combinedLabels[0][id]==obj) {
+                    if (combinedLabels[0][idmap[xyz]]==obj) {
                         float score;
                         if (certainty) {
-                            score = combinedProbas[0][id]-combinedProbas[1][id];
+                            score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
                         } else {
-                            score = combinedProbas[0][id];
+                            score = combinedProbas[0][idmap[xyz]];
                         }
                         if (score>bestscore[obj]) {
                             bestscore[obj] = score;
@@ -1584,18 +1583,17 @@ public class ConditionalShapeSegmentation {
                     + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
                     + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
             if (mask[xyz]) {
-                int id = idmap[xyz];
                 int obj = labels[idx];
                 for (int best=0;best<nbest;best++) {
-                    if (combinedLabels[best][id]==obj) {
+                    if (combinedLabels[best][idmap[xyz]]==obj) {
                         if (certainty) {
                             if (best==0) {
-                                finalProba[idx] = combinedProbas[0][id]-combinedProbas[1][id];
+                                finalProba[idx] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
                             } else {
-                                finalProba[idx] = combinedProbas[best][id]-combinedProbas[0][id];
+                                finalProba[idx] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
                             }
                         } else {
-                            finalProba[idx] = combinedProbas[best][id];
+                            finalProba[idx] = combinedProbas[best][idmap[xyz]];
                         }
                         best=nbest;
                     }
