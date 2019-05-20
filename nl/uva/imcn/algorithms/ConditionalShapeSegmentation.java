@@ -179,6 +179,26 @@ public class ConditionalShapeSegmentation {
                     }
                 }
             }
+            // compute the structure-specific volume scaling factors
+            float[] atlasVol = new float[nobj];
+            for (int xyz=0;xyz<naxyz;xyz++) if (lval[xyz]>0) {
+                int obj = Numerics.floor(lval[xyz]/100.0f);
+                atlasVol[obj-1] += rax*ray*raz;
+            }
+            float[] mappedVol = new float[nobj];
+            for (int idx=0;idx<ntxyz;idx++) if (mask[idx]) {
+                int obj = Numerics.floor(spatialLabels[0][idmap[idx]]/100.0f);
+                mappedVol[obj-1] += rtx*rty*rtz;
+            }
+            System.out.print("volume ratios: ");
+            for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(mappedVol[obj]/atlasVol[obj])+", ");
+            System.out.println("(m/a)");
+            // adjust the volume priors
+            for (int obj=0;obj<nobj;obj++) {
+                objVolumeMean[obj] *= mappedVol[obj]/atlasVol[obj];
+                objVolumeStdv[obj] *= mappedVol[obj]/atlasVol[obj];
+            }
+            // reset all indices to subject space
             nx = ntx; ny = nty; nz = ntz; nxyz = ntxyz;
             rx = rtx; ry = rty; rz = rtz;
             map2target = null;
@@ -884,7 +904,8 @@ public class ConditionalShapeSegmentation {
         } else {
             levelsets = lvlImages;
 		}
-        // compute volume mean, stdv of each structure in subject space
+		/* if not compensating for the rescaling
+        // compute volume mean, stdv of each structure in subject space?
         objVolumeMean = new float[nobj];
         objVolumeStdv = new float[nobj];
         for (int obj=0;obj<nobj;obj++) {
@@ -903,6 +924,7 @@ public class ConditionalShapeSegmentation {
             }
             objVolumeStdv[obj] = (float)FastMath.sqrt(objVolumeStdv[obj]);
         }
+        */
        
 		// mask anything too far outside the structures of interest in atlas space
 		mask = new boolean[naxyz];
@@ -1282,6 +1304,29 @@ public class ConditionalShapeSegmentation {
                 }
             }
         }
+        /* if computing in atlas space */
+        // compute volume mean, stdv of each structure
+        objVolumeMean = new float[nobj];
+        objVolumeStdv = new float[nobj];
+        for (int obj=0;obj<nobj;obj++) {
+            float[] vols = new float[nsub];
+            for (int sub=0;sub<nsub;sub++) {
+                vols[sub] = 0.0f;
+                for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
+                    int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
+                            + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
+                            + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
+                    if (levelsets[sub][obj][idx]<0) {
+                        vols[sub]+=rax*ray*raz;
+                    }
+                }
+                objVolumeMean[obj] += vols[sub]/nsub;
+            }
+            for (int sub=0;sub<nsub;sub++) {
+                objVolumeStdv[obj] += Numerics.square(vols[sub]-objVolumeMean[obj])/(nsub-1.0f);
+            }
+            objVolumeStdv[obj] = (float)FastMath.sqrt(objVolumeStdv[obj]);
+        }            
         
 		// at this point the atlas data is not used anymore
 		levelsets = null;
