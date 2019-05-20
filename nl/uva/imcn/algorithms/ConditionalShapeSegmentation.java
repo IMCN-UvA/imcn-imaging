@@ -869,6 +869,9 @@ public class ConditionalShapeSegmentation {
 	}
 
 	public final void computeMappedAtlasPriors() {
+	    nx = nax; ny = nay; nz = naz; nxyz = naxyz;
+	    rx = rax; ry = ray; rz = raz;
+	    
 	    float[][][] levelsets = null; 
 	    
 	    // not correct: explicitly build the levelset of the background first, then crop it
@@ -1111,7 +1114,7 @@ public class ConditionalShapeSegmentation {
                 for (int c=0;c<nc;c++) {
                     boolean existsPair = false;
                     // use median intensities to estimate [min,max]
-                    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
                         double med = medc[c][idmap[xyz]];
                         double iqr = iqrc[c][idmap[xyz]];
                         // assuming here that iqr==0 means masked regions
@@ -1156,7 +1159,7 @@ public class ConditionalShapeSegmentation {
 		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
 		        for (int c=0;c<nc;c++) {
 		            if (condpair[c][obj1][obj2]) {
-                        for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                        for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
                             double med = medc[c][idmap[xyz]];
                             double iqr = iqrc[c][idmap[xyz]];
                             // assuming here that iqr==0 means masked regions
@@ -1221,7 +1224,7 @@ public class ConditionalShapeSegmentation {
                     // System.out.println("..mean");
                     double sum = 0.0;
                     double den = 0.0;
-                    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
                         double med = medc[c][idmap[xyz]];
                         double iqr = iqrc[c][idmap[xyz]];
                         // assuming here that iqr==0 means masked regions
@@ -1260,7 +1263,7 @@ public class ConditionalShapeSegmentation {
                     }
                     //System.out.println("..stdev");
                     double var = 0.0;
-                    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
                         double med = medc[c][idmap[xyz]];
                         double iqr = iqrc[c][idmap[xyz]];
                        // assuming here that iqr==0 means masked regions
