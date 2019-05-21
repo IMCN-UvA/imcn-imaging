@@ -1573,7 +1573,6 @@ public class ConditionalShapeSegmentation {
                 posteriors[best1][best2] = 0.0;
  		    }
 		}
-		
 	}
 	
 	public final void collapseConditionalMaps() {	    
@@ -1751,6 +1750,19 @@ public class ConditionalShapeSegmentation {
 		}
 
 		target = null;
+	}
+	
+	public void maximumPosteriorThreshold() {
+        // final segmentation: collapse onto result images
+        finalLabel = new int[nxyz];
+        finalProba = new float[nxyz];
+        for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
+            int xyz = x+ntx*y+ntx*nty*z;
+            if (mask[xyz]) {
+                finalLabel[xyz] = combinedLabels[0][idmap[xyz]];
+            }
+        }
+        return;            
 	}
 	
 	public void optimalVolumeThreshold(float spread, float scale, boolean certainty) {
