@@ -18,9 +18,9 @@ public class LocalComplexPCADenoising {
 	// input parameters
 	private		float[][] 	invmag = null;
 	private		float[][] 	invphs = null;
-	private		int			nx, ny, nz, nt, nxyz;
+	private		int			nx, ny, nz, nxyz;
 	private 	float 		rx, ry, rz;
-	private     int         nc = 1;
+	private     int         nt = 1;
 
 	private     int         nimg = 5;
 	private		float		stdevCutoff = 1.1f;
@@ -79,7 +79,7 @@ public class LocalComplexPCADenoising {
 	//public final void setPhaseTVSubtraction(boolean in) { tvphs = in; }
 	
 	public final void setDimensions(int x, int y, int z) { nx=x; ny=y; nz=z; nxyz=nx*ny*nz; nt=1;}
-	public final void setDimensions(int x, int y, int z, int t) { nx=x; ny=y; nz=z; nt=1; nxyz=nx*ny*nz;}
+	public final void setDimensions(int x, int y, int z, int t) { nx=x; ny=y; nz=z; nt=t; nxyz=nx*ny*nz;}
 	public final void setDimensions(int[] dim) { nx=dim[0]; ny=dim[1]; nz=dim[2]; if (dim.length>3) nt=dim[3]; else nt=1; nxyz=nx*ny*nz;}
 	
 	public final void setResolutions(float x, float y, float z) { rx=x; ry=y; rz=z; }

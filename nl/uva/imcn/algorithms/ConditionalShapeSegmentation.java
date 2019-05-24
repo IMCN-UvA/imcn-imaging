@@ -204,7 +204,7 @@ public class ConditionalShapeSegmentation {
             map2target = null;
             map2atlas = null;
 	    } else {
-            mask = new boolean[nxyz]; 
+            mask = new boolean[naxyz]; 
             for (int xyz=0;xyz<naxyz;xyz++) {
                 if (lval[xyz]>0) {
                     mask[xyz] = true;
@@ -215,9 +215,9 @@ public class ConditionalShapeSegmentation {
             }
             System.out.println("work region size: "+ndata);
             // build ID map
-            idmap = new int[ntxyz];
+            idmap = new int[naxyz];
             int id = 0;
-            for (int xyz=0;xyz<ntxyz;xyz++) if (mask[xyz]) {
+            for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
                 idmap[xyz] = id;
                 id++;
             }
@@ -2104,6 +2104,103 @@ public class ConditionalShapeSegmentation {
         return;            
 	}
 	
+	public void optimalCertaintyThreshold() {
+	    // main idea: region growing from inside, until it reaches the boundaries (single object constraint)
+	    
+		// find appropriate threshold to have correct volume; should use a fast marching approach!
+		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
+		int[] labels = new int[ndata];
+        int[] start = new int[nobj];
+        float[] bestscore = new float[nobj];
+		double[] dev = new double[nobj];
+        int[] ndev = new int[nobj];
+		heap.reset();
+		// important: skip first label as background (allows for unbounded growth)
+        for (int obj=1;obj<nobj;obj++) {
+		    // find highest scoring voxel as starting point
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz=x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    int id = idmap[xyz];
+                    if (combinedLabels[0][idmap[xyz]]==obj) {
+                        float score;
+                        score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
+                        if (score>bestscore[obj]) {
+                            bestscore[obj] = score;
+                            start[obj] = xyz;
+                        }
+                        
+                        // check if boundary
+                        boolean isboundary=false;
+                        for (byte k = 0; k<26; k++) {
+                            int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                            if (mask[ngb]) {
+                                if (combinedLabels[0][idmap[ngb]]!=obj) {
+                                    isboundary = true;
+                                    k=26;
+                                }
+                            }
+                        }
+                        if (isboundary) {
+                            dev[obj] += score*score;
+                            ndev[obj]++;
+                        }
+                    }
+                }
+            }
+            heap.addValue(bestscore[obj],start[obj],(byte)obj);
+            dev[obj] /= (double)ndev[obj];
+        }
+        float[] prev = new float[nobj];
+        double[] vol = new double[nobj];
+        double[] bestvol = new double[nobj];
+        double[] bestproba = new double[nobj];
+        while (heap.isNotEmpty()) {
+            float score = heap.getFirst();
+            int xyz = heap.getFirstId();
+            byte obj = heap.getFirstState();
+            heap.removeFirst();
+            if (labels[idmap[xyz]]==0) {
+                if (vol[obj]<bestvol[obj]) {
+                    // update the values
+                    vol[obj]+=rx*ry*rz;
+                    labels[idmap[xyz]] = obj;
+                
+                    // add neighbors until reaching zero
+                    for (byte k = 0; k<6; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        if (combinedLabels[best][idmap[ngb]]==obj) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                                            }
+                                            best=nbest;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // final segmentation: collapse onto result images
+        finalLabel = new int[nxyz];
+        finalProba = new float[nxyz];
+        float[] kept = new float[nobj];
+        for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
+            int xyz = x+ntx*y+ntx*nty*z;
+            if (mask[xyz]) {
+                finalProba[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
+                finalLabel[xyz] = labels[idmap[xyz]];
+            }
+        }
+        return;            
+	}
+	
 	public void mappedOptimalVolumeThreshold(float spread, float scale, boolean certainty) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
@@ -2292,6 +2389,31 @@ public class ConditionalShapeSegmentation {
 	    
 	    // using a coordinate mapping to output the result from atlas to subject space
 	    
+	    // compute the structure-specific volume scaling factors
+        float[] atlasVol = new float[nobj];
+        for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
+            int obj = Numerics.floor(spatialLabels[0][idmap[xyz]]/100.0f);
+            atlasVol[obj-1] += rax*ray*raz;
+        }
+        float[] mappedVol = new float[nobj];
+        for (int idx=0;idx<ntxyz;idx++) {
+            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+            if (mask[xyz]) {
+                int obj = Numerics.floor(spatialLabels[0][idmap[xyz]]/100.0f);
+                mappedVol[obj-1] += rtx*rty*rtz;
+            }
+        }
+        System.out.print("volume ratios: ");
+        for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(mappedVol[obj]/atlasVol[obj])+", ");
+        System.out.println("(m/a)");
+        // adjust the volume priors
+        for (int obj=0;obj<nobj;obj++) {
+            objVolumeMean[obj] *= mappedVol[obj]/atlasVol[obj];
+            objVolumeStdv[obj] *= mappedVol[obj]/atlasVol[obj];
+        }
+            
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
 		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
 		int[] labels = new int[ntxyz];
@@ -2476,5 +2598,129 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
+
+	public void mappedOptimalCertaintyThreshold(float spread) {
+	    // main idea: region growing from inside, until within volume prior
+	    // and a "certainty" close to posterior
+	    
+	    // using a coordinate mapping to output the result from atlas to subject space
+	    
+		// find appropriate threshold to have correct volume; should use a fast marching approach!
+		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
+		int[] labels = new int[ntxyz];
+        int[] start = new int[nobj];
+        float[] bestscore = new float[nobj];
+        double[] dev = new double[nobj];
+        int[] ndev = new int[nobj];
+		heap.reset();
+		// important: skip first label as background (allows for unbounded growth)
+        for (int obj=1;obj<nobj;obj++) {
+		    // find highest scoring voxel as starting point
+            for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
+                int idx = x+ntx*y+ntx*nty*z;
+                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                if (mask[xyz]) {
+                    if (combinedLabels[0][idmap[xyz]]==obj) {
+                        float score;
+                        score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
+                        
+                        if (score>bestscore[obj]) {
+                            bestscore[obj] = score;
+                            start[obj] = idx;
+                        }
+                        
+                        // check if boundary
+                        boolean isboundary=false;
+                        for (byte k = 0; k<26; k++) {
+                            int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
+                            int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
+                                    + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
+                                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
+                            if (mask[ngb]) {
+                                if (combinedLabels[0][idmap[ngb]]!=obj) {
+                                    isboundary = true;
+                                    k=26;
+                                }
+                            }
+                        }
+                        if (isboundary) {
+                            dev[obj] += score*score;
+                            ndev[obj]++;
+                        }
+                    }
+                }
+            }
+            heap.addValue(bestscore[obj],start[obj],(byte)obj);
+            dev[obj] /= (double)ndev[obj];
+        }
+        float[] prev = new float[nobj];
+        double[] vol = new double[nobj];
+        double[] bestvol = new double[nobj];
+        double[] bestproba = new double[nobj];
+        while (heap.isNotEmpty()) {
+            float score = heap.getFirst();
+            int idx = heap.getFirstId();
+            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+            byte obj = heap.getFirstState();
+            heap.removeFirst();
+            if (labels[idx]==0) {
+                if (vol[obj]<bestvol[obj]) {
+                    // update the values
+                    vol[obj] += rtx*rty*rtz;
+                    labels[idx] = obj;
+                
+                    // add neighbors
+                    for (byte k = 0; k<6; k++) {
+                        int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
+                        int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
+                                + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
+                                + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
+                        if (mask[ngb]) {
+                            if (labels[idn]==0) {
+                                for (int best=0;best<nbest;best++) {
+                                    if (combinedLabels[best][idmap[ngb]]==obj) {
+                                        if (best==0) {
+                                            heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],idn,obj);
+                                        }
+                                        best=nbest;
+                                    }
+                                }
+                            }  
+                        }
+                    }
+                }
+            }
+        }
+        // final segmentation: collapse on a single dimension
+        finalLabel = labels;
+        finalProba = new float[ntxyz];
+        
+        float[] kept = new float[nobj];
+        for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
+            int idx = x+ntx*y+ntx*nty*z;
+            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
+                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
+                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+            if (mask[xyz]) {
+                int obj = labels[idx];
+                for (int best=0;best<nbest;best++) {
+                    if (combinedLabels[best][idmap[xyz]]==obj) {
+                        if (best==0) {
+                            finalProba[idx] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
+                        } else {
+                            finalProba[idx] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
+                        }
+                        best=nbest;
+                    }
+                }
+            }
+        }
+        return;            
+	}
+
 }
 
