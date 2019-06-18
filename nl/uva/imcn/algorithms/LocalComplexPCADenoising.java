@@ -33,6 +33,7 @@ public class LocalComplexPCADenoising {
 	//private     boolean     tvmag = false;
 	//private     boolean     tvphs = false;
 	private     boolean     slab2D = false;
+	private     boolean     randomMatrix = false;
 	
 	//public static final String[]     thresholdingTypes = {"Eigenvalues","Global noise","Second half"};
 	//private     String      thresholding = "Second half";
@@ -288,16 +289,6 @@ public class LocalComplexPCADenoising {
                 Matrix M = new Matrix(patch);
                 SingularValueDecomposition svd = M.svd();
             
-                // estimate noise
-                // simple version: compute the standard deviation of the patch
-                double sigma = 0.0;
-                for (int n=0;n<ngbN;n++) for (int i=0;i<ndim;i++) {
-                    sigma += patch[n][i]*patch[n][i];
-                }
-                sigma /= ndim*ngbN;
-                sigma = FastMath.sqrt(sigma);
-                
-                // cutoff
                 //System.out.println("eigenvalues: ");
                 double[] eig = new double[ndim];
                 boolean[] used = new boolean[ndim];
@@ -307,58 +298,99 @@ public class LocalComplexPCADenoising {
                     eig[n] = svd.getSingularValues()[n];
                     eigsum += Numerics.abs(eig[n]);
                 }
-                // fit second half linear decay model
-                double[] loc = new double[hdim];
-                double[][] fit = new double[hdim][1];
-                for (int n=ndim-hdim;n<ndim;n++) {
-                    loc[n-ndim+hdim] = (n-ndim+hdim)/(double)hdim;
-                    fit[n-ndim+hdim][0] = Numerics.abs(eig[n]);
-                }
-                double[][] poly = new double[hdim][2];
-                for (int n=0;n<hdim;n++) {
-                    poly[n][0] = 1.0;
-                    poly[n][1] = loc[n];
-                }
-                // invert the linear model
-                Matrix mtx = new Matrix(poly);
-                Matrix smp = new Matrix(fit);
-                Matrix val = mtx.solve(smp);
-        
-                // compute the expected value:
-                double[] expected = new double[ndim];
-                for (int n=0;n<ndim;n++) {
-                    double n0 = (n-ndim+hdim)/(double)hdim;
-                    // linear coeffs,
-                    expected[n] = (val.get(0,0) + n0*val.get(1,0));
-                    //expected[n] = n*slope + intercept;
-                }
-                double residual = 0.0;
-                double meaneig = 0.0;
-                double variance = 0.0;
-                for (int n=ndim-hdim;n<ndim;n++) meaneig += Numerics.abs(eig[n]);
-                meaneig /= hdim;
-                for (int n=ndim-hdim;n<ndim;n++) {
-                    variance += (meaneig-Numerics.abs(eig[n]))*(meaneig-Numerics.abs(eig[n]));
-                    residual += (expected[n]-Numerics.abs(eig[n]))*(expected[n]-Numerics.abs(eig[n]));
-                }
                 double rsquare = 1.0;
-                if (variance>0) rsquare = Numerics.max(1.0 - (residual/variance), 0.0);
-                
-                for (int n=0;n<ndim;n++) {
-                    //System.out.print(" "+(eig[n]/sigma));
-                    if (n>=minDimension && Numerics.abs(eig[n]) < stdevCutoff*expected[n]) {
-                        used[n] = false;
-                        nzero++;
-                        //System.out.print("(-),");
-                    } else  if (maxDimension>0 && n>=maxDimension) {
-                        used[n] = false;
-                        nzero++;
-                        //System.out.print("(|),");
-                    } else {
-                        used[n] = true;
-                        //System.out.print("(+),");
+                        
+                // estimate noise
+                if (randomMatrix) {
+                    // use the random matrix theory algorithm of Veraart et al., 2016
+                    
+                    // 1. renormalize to eigenvalues
+                    double[] eignorm = new double[ndim];
+                    for (int n=0;n<ndim;n++) {
+                        eignorm[n] = eig[n]*eig[n]/ngbN;
+                    }
+                    // 2. increase the number of used eigenvalues
+                    int nkept = ndim-1;
+         
+                    for (int n=0;n<ndim-1;n++) {
+                        double eignormsum = 0.0;
+                        for (int m=n+1;m<ndim;m++) {
+                            eignormsum += eignorm[m];
+                        }
+                        double sigma = (eignorm[n+1]-eignorm[ndim-1])/(4.0*FastMath.sqrt(ndim-n)/(double)ngbN);
+                        if (eignormsum> (ndim-n)*sigma) {
+                            nkept = n;
+                            n = ndim;
+                        }
+                    }
+                    for (int n=0;n<=nkept;n++) {
+                        used[n] = true;   
+                    }
+                    for (int n=nkept+1;n<ndim;n++) {
+                        used[n] = false;   
+                    }
+                } else {
+                    // simple version: compute the standard deviation of the patch
+                    double sigma = 0.0;
+                    for (int n=0;n<ngbN;n++) for (int i=0;i<ndim;i++) {
+                        sigma += patch[n][i]*patch[n][i];
+                    }
+                    sigma /= ndim*ngbN;
+                    sigma = FastMath.sqrt(sigma);
+                    
+                    // fit second half linear decay model
+                    double[] loc = new double[hdim];
+                    double[][] fit = new double[hdim][1];
+                    for (int n=ndim-hdim;n<ndim;n++) {
+                        loc[n-ndim+hdim] = (n-ndim+hdim)/(double)hdim;
+                        fit[n-ndim+hdim][0] = Numerics.abs(eig[n]);
+                    }
+                    double[][] poly = new double[hdim][2];
+                    for (int n=0;n<hdim;n++) {
+                        poly[n][0] = 1.0;
+                        poly[n][1] = loc[n];
+                    }
+                    // invert the linear model
+                    Matrix mtx = new Matrix(poly);
+                    Matrix smp = new Matrix(fit);
+                    Matrix val = mtx.solve(smp);
+            
+                    // compute the expected value:
+                    double[] expected = new double[ndim];
+                    for (int n=0;n<ndim;n++) {
+                        double n0 = (n-ndim+hdim)/(double)hdim;
+                        // linear coeffs,
+                        expected[n] = (val.get(0,0) + n0*val.get(1,0));
+                        //expected[n] = n*slope + intercept;
+                    }
+                    double residual = 0.0;
+                    double meaneig = 0.0;
+                    double variance = 0.0;
+                    for (int n=ndim-hdim;n<ndim;n++) meaneig += Numerics.abs(eig[n]);
+                    meaneig /= hdim;
+                    for (int n=ndim-hdim;n<ndim;n++) {
+                        variance += (meaneig-Numerics.abs(eig[n]))*(meaneig-Numerics.abs(eig[n]));
+                        residual += (expected[n]-Numerics.abs(eig[n]))*(expected[n]-Numerics.abs(eig[n]));
+                    }
+                    if (variance>0) rsquare = Numerics.max(1.0 - (residual/variance), 0.0);
+                    
+                    for (int n=0;n<ndim;n++) {
+                        //System.out.print(" "+(eig[n]/sigma));
+                        if (n>=minDimension && Numerics.abs(eig[n]) < stdevCutoff*expected[n]) {
+                            used[n] = false;
+                            nzero++;
+                            //System.out.print("(-),");
+                        } else  if (maxDimension>0 && n>=maxDimension) {
+                            used[n] = false;
+                            nzero++;
+                            //System.out.print("(|),");
+                        } else {
+                            used[n] = true;
+                            //System.out.print("(+),");
+                        }
                     }
                 }
+                
                 // reconstruct
                 Matrix U = svd.getU();
                 Matrix V = svd.getV();
