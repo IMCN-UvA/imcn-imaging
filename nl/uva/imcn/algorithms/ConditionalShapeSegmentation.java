@@ -1911,7 +1911,8 @@ public class ConditionalShapeSegmentation {
         int[] start = new int[nobj];
         float[] bestscore = new float[nobj];
         for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
-		heap.reset();
+		double[] voldata = new double[nobj];
+        heap.reset();
 		// important: skip first label as background (allows for unbounded growth)
         for (int obj=1;obj<nobj;obj++) {
 		    // find highest scoring voxel as starting point
@@ -1931,6 +1932,7 @@ public class ConditionalShapeSegmentation {
                                 bestscore[obj] = score;
                                 start[obj] = xyz;
                             }
+                            if (b==0) voldata[obj] += rx*ry*rz;
                         }
                     }
                 }
@@ -1948,8 +1950,9 @@ public class ConditionalShapeSegmentation {
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
-                double volmean = objVolumeMean[obj];
-                double volstdv = objVolumeStdv[obj];
+                double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
+                double volstdv = FastMath.sqrt( Numerics.square(objVolumeStdv[obj])
+                                    +Numerics.square(0.5*(objVolumeMean[obj]-voldata[obj])) );
                 // compute the joint probability function
                 double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
                 double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
@@ -2247,7 +2250,7 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
-	
+	/*
 	public void optimalCertaintyThreshold() {
 	    // main idea: region growing from inside, until it reaches the boundaries (single object constraint)
 	    
@@ -2314,7 +2317,7 @@ public class ConditionalShapeSegmentation {
                     vol[obj]+=rx*ry*rz;
                     labels[idmap[xyz]] = obj;
                 
-                    // add neighbors until reaching zero
+                    // add neighbors until reaching zero: not very sensible...
                     for (byte k = 0; k<6; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
@@ -2347,7 +2350,7 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}
+	}*/
 	
 	public void mappedOptimalVolumeThreshold(float spread, float scale, boolean certainty) {
 	    // main idea: region growing from inside, until within volume prior
@@ -2747,6 +2750,7 @@ public class ConditionalShapeSegmentation {
         return;            
 	}
 
+	/*
 	public void mappedOptimalCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a "certainty" close to posterior
@@ -2869,6 +2873,6 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
-
+	*/
 }
 
