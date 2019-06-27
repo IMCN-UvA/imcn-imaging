@@ -34,7 +34,7 @@ public class ConditionalShapeSegmentation {
 	
 	private float deltaIn = 2.0f;
 	private float deltaOut = 0.0f;
-	private float boundary = 5.0f;
+	private float boundary = 10.0f;
 	private boolean modelBackground = true;
 	private boolean cancelBackground = true;
 	private boolean cancelAll = false;
@@ -181,7 +181,8 @@ public class ConditionalShapeSegmentation {
                 }
             }
             // compute the structure-specific volume scaling factors
-            float[] atlasVol = new float[nobj];
+            // problem: if volume of average is null (low overlap + small structures), result is likely incorrect
+            /*float[] atlasVol = new float[nobj];
             for (int xyz=0;xyz<naxyz;xyz++) if (lval[xyz]>0) {
                 int obj = Numerics.floor(lval[xyz]/100.0f);
                 atlasVol[obj-1] += rax*ray*raz;
@@ -190,7 +191,38 @@ public class ConditionalShapeSegmentation {
             for (int idx=0;idx<ntxyz;idx++) if (mask[idx]) {
                 int obj = Numerics.floor(spatialLabels[0][idmap[idx]]/100.0f);
                 mappedVol[obj-1] += rtx*rty*rtz;
+            }*/
+            // use a region growing approach instead...
+            int[] atlasLabels = atlasVolumeLabels(pval, lval);
+            float[] atlasVol = new float[nobj];
+            for (int xyz=0;xyz<naxyz;xyz++) if (atlasLabels[xyz]>0) {
+                atlasVol[atlasLabels[xyz]] += rax*ray*raz;
             }
+            System.out.print("atlas volumes: ");
+            for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(atlasVol[obj])+", ");
+            System.out.println("(a)");
+            
+            float[] mappedVol = new float[nobj];
+            for (int xt=0;xt<ntx;xt++) for (int yt=0;yt<nty;yt++) for (int zt=0;zt<ntz;zt++) {
+                int idx = xt + ntx*yt + ntx*nty*zt;
+                if (mask[idx]) {
+                    int xa = Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nax-1);
+                    int ya = Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,nay-1);
+                    int za = Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,naz-1);
+                    //int xyz =       Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nx-1)
+                    //        +    nx*Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,ny-1)
+                    //        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                    int xyz = xa + nax*ya + nax*nay*za;
+
+                    if (atlasLabels[xyz]>0) {
+                        mappedVol[atlasLabels[xyz]] += rtx*rty*rtz;
+                    }
+                }
+            }
+            System.out.print("mapped volumes: ");
+            for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(mappedVol[obj])+", ");
+            System.out.println("(m)");
+            
             System.out.print("volume ratios: ");
             for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(mappedVol[obj]/atlasVol[obj])+", ");
             System.out.println("(m/a)");
@@ -473,13 +505,11 @@ public class ConditionalShapeSegmentation {
                     for (int obj=0;obj<nobj-1;obj++) {
                         if (lvlImages[sub][obj][xyz]<mindist) mindist = lvlImages[sub][obj][xyz];
                     }
-                    /* just increase to the boundary of used data
-                    if (mindist<boundary/2.0) {
+                    if (mindist<boundary) {
                         background[xyz] = -mindist;
                     } else {
-                        background[xyz] = -boundary/2.0f + (mindist-boundary/2.0f);
-                    }*/
-                    background[xyz] = -mindist;
+                        background[xyz] = mindist;
+                    }
                 }
                 InflateGdm gdm = new InflateGdm(background, nx, ny, nz, rx, ry, rz, bgmask, 0.4f, 0.4f, "no", null);
                 gdm.evolveNarrowBand(0, 1.0f);
@@ -893,10 +923,10 @@ public class ConditionalShapeSegmentation {
                     for (int obj=0;obj<nobj-1;obj++) {
                         if (lvlImages[sub][obj][xyz]<mindist) mindist = lvlImages[sub][obj][xyz];
                     }
-                    if (mindist<boundary/2.0) {
+                    if (mindist<boundary) {
                         background[xyz] = -mindist;
                     } else {
-                        background[xyz] = -boundary/2.0f + (mindist-boundary/2.0f);
+                        background[xyz] = mindist;
                     }
                 }
                 InflateGdm gdm = new InflateGdm(background, ntx, nty, ntz, rtx, rty, rtz, bgmask, 0.4f, 0.4f, "no", null);
@@ -1852,7 +1882,7 @@ public class ConditionalShapeSegmentation {
                 }
                 for (int best=0;best<nbest;best++) {
                     int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
-                    int best2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                    int best2 = Numerics.round(combinedLabels[best][id]-100*(best1+1)-1);
                         
                     for (int next=0;next<nbest;next++) {
                         int obj1 = Numerics.floor(combinedLabels[next][id]/100.0f)-1;
@@ -1940,6 +1970,15 @@ public class ConditionalShapeSegmentation {
             }
             heap.addValue(bestscore[obj],start[obj],(byte)obj);
         }
+        // Posterior volumes:
+        for (int obj=1;obj<nobj;obj++) {
+            double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
+            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
+                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
+            System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
+            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
+        }   
+        
         float[] prev = new float[nobj];
         double[] vol = new double[nobj];
         double[] bestvol = new double[nobj];
@@ -1950,14 +1989,22 @@ public class ConditionalShapeSegmentation {
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
-                double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
-                double volstdv = FastMath.sqrt( Numerics.square(objVolumeStdv[obj])
-                                    +Numerics.square(0.5*(objVolumeMean[obj]-voldata[obj])) );
+                double volmean = objVolumeMean[obj];
+                double volstdv = objVolumeStdv[obj];
+                // posterior estimate of the volumes? or just prior?
+                //double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
+                //double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
+                //                    + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
+                
                 // compute the joint probability function
                 double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
                 double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
+                double pscore = FastMath.exp(-0.5*(score*score)/(scale*scale));
                 
-                double pstop = pvol*pdiff;
+                //double pstop = pvol*pdiff*pscore;
+                double pstop = pvol*pscore;
+                //double pstop = pvol*pdiff;
+                //double pstop = pvol;
                 if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
                     bestproba[obj] = pstop;
                     bestvol[obj] = vol[obj];
@@ -1996,8 +2043,8 @@ public class ConditionalShapeSegmentation {
                 }
             }
         }
-        System.out.println("Average volumes: ");
-        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
+        //System.out.println("Average volumes: ");
+        //for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
         System.out.println("\nOptimized volumes: ");
         for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
         // re-run one last time to get the segmentation
@@ -2075,6 +2122,63 @@ public class ConditionalShapeSegmentation {
         return;            
 	}
 		
+	private int[] atlasVolumeLabels(float[] pval, int[] lval) {
+		// find appropriate threshold to have correct volume; should use a fast marching approach!
+		BinaryHeap2D	heap = new BinaryHeap2D(nax*nay+nay*naz+naz*nax, BinaryHeap4D.MAXTREE);
+		int[] labels = new int[naxyz];
+        int[] start = new int[nobj];
+        float[] bestscore = new float[nobj];
+        for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
+        heap.reset();
+		// important: skip first label as background (allows for unbounded growth)
+        for (int obj=1;obj<nobj;obj++) {
+		    // find highest scoring voxel as starting point
+            for (int b=0;b<nbest-1;b++) {
+                for (int x=1;x<nax-1;x++) for (int y=1;y<nay-1;y++) for (int z=1;z<naz-1;z++) {
+                    int xyz=x+nax*y+nax*nay*z;
+                    if (Numerics.floor(lval[xyz+b*naxyz]/100.0f)==obj+1) {
+                        if (pval[xyz+b*naxyz]>bestscore[obj]) {
+                            bestscore[obj] = pval[xyz+b*naxyz];
+                            start[obj] = xyz;
+                        }
+                    }
+                }
+                if (bestscore[obj]>-INF) b = nbest;
+            }
+            heap.addValue(bestscore[obj],start[obj],(byte)obj);
+        }
+        double[] vol = new double[nobj];
+        while (heap.isNotEmpty()) {
+            float score = heap.getFirst();
+            int xyz = heap.getFirstId();
+            byte obj = heap.getFirstState();
+            heap.removeFirst();
+            if (labels[xyz]==0) {
+                 if (vol[obj]<objVolumeMean[obj]) {
+                    // update the values
+                    vol[obj]+=rax*ray*raz;
+                    labels[xyz] = obj;
+                
+                    // add neighbors
+                    for (byte k = 0; k<6; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nax, nay, naz);
+                        if (ngb>0 && ngb<naxyz) {
+                           if (labels[ngb]==0) {
+                                for (int best=0;best<nbest;best++) {
+                                    if (Numerics.floor(lval[xyz+best*naxyz]/100.0f)==obj+1) {
+                                       heap.addValue(pval[ngb+best*naxyz],ngb,obj);
+                                       best=nbest;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return labels;            
+	}
+		
 	public void optimalVolumeCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
@@ -2085,8 +2189,10 @@ public class ConditionalShapeSegmentation {
         int[] start = new int[nobj];
         float[] bestscore = new float[nobj];
 		for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
+		double[] voldata = new double[nobj];
 		double[] avgbound = new double[nobj];
         double[] devbound = new double[nobj];
+        double[] devdiff = new double[nobj];
         int[] nbound = new int[nobj];
 		heap.reset();
 		// important: skip first label as background (allows for unbounded growth)
@@ -2104,6 +2210,7 @@ public class ConditionalShapeSegmentation {
                                 bestscore[obj] = score;
                                 start[obj] = xyz;
                             }
+                            if (b==0) voldata[obj] += rx*ry*rz;
                         }
                     }
                 }
@@ -2115,55 +2222,65 @@ public class ConditionalShapeSegmentation {
                 int xyz=x+nx*y+nx*ny*z;
                 if (mask[xyz]) {
                     int id = idmap[xyz];
-                    if (combinedLabels[0][idmap[xyz]]==obj) {
-                        float score;
-                        score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        
-                        boolean isBoundary = false;
+                    if (combinedLabels[0][idmap[xyz]]==obj || start[obj]==xyz) {
                         for (byte k = 0; k<26; k++) {
                             int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                             if (mask[ngb]) {
+                                // also measure the neighbors' values -> count every pair (values may be used multiple times,
+                                // but the number of samples is equal for inside and outside)
                                 if (combinedLabels[0][idmap[ngb]]!=obj) {
-                                    isBoundary = true;
-                                    k=26;
+                                    //avgbound[obj] += combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
+                                    //avgbound[obj] += combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]];
+                                    avgbound[obj] += combinedProbas[0][idmap[xyz]];
+                                    avgbound[obj] += combinedProbas[1][idmap[ngb]];
+                                    nbound[obj]+=2;
                                 }
                             }
-                        }
-                        if (isBoundary) {
-                            avgbound[obj] += score;
-                            nbound[obj]++;
                         }
                     }
                 }
             }
-            avgbound[obj] /= (double)nbound[obj];
+            if (nbound[obj]>0) avgbound[obj] /= (double)nbound[obj];
             // boundary: stdev difference
             for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
                 int xyz=x+nx*y+nx*ny*z;
                 if (mask[xyz]) {
                     int id = idmap[xyz];
-                    if (combinedLabels[0][idmap[xyz]]==obj) {
-                        float score;
-                        score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        
-                        boolean isBoundary = false;
+                    if (combinedLabels[0][idmap[xyz]]==obj || start[obj]==xyz) {
                         for (byte k = 0; k<26; k++) {
                             int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                             if (mask[ngb]) {
                                 if (combinedLabels[0][idmap[ngb]]!=obj) {
-                                    isBoundary = true;
-                                    k=26;
+                                    //devbound[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]-avgbound[obj]);
+                                    //devbound[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]]-avgbound[obj]);
+                                    devbound[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-avgbound[obj]);
+                                    devbound[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-avgbound[obj]);
+                                    devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]);
+                                    devdiff[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
                                 }
                             }
-                        }
-                        if (isBoundary) {
-                            devbound[obj] += (score-avgbound[obj])*(score-avgbound[obj]);
                         }
                     }
                 }
             }
-            devbound[obj] /= (nbound[obj]-1.0);
+            if (nbound[obj]>1) {
+                devbound[obj] /= (nbound[obj]-1.0);
+                devdiff[obj] /= (nbound[obj]-1.0);
+            }
         }
+        // Posterior volumes:
+        for (int obj=1;obj<nobj;obj++) {
+            double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
+            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
+                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
+            System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
+            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
+        }   
+        // Boundary statistics
+        for (int obj=1;obj<nobj;obj++) {
+            System.out.print("Label "+obj+": boundary = "+avgbound[obj]+" +/- "+FastMath.sqrt(devbound[obj])+" (difference: "+FastMath.sqrt(devdiff[obj])+")\n");
+        }   
+                
         float[] prev = new float[nobj];
         double[] vol = new double[nobj];
         double[] bestvol = new double[nobj];
@@ -2174,15 +2291,31 @@ public class ConditionalShapeSegmentation {
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
-                double volmean = objVolumeMean[obj];
-                double volstdv = objVolumeStdv[obj];
+                //double volmean = objVolumeMean[obj];
+                //double volstdv = objVolumeStdv[obj];
+                double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
+                double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
+                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
                 // compute the joint probability function
                 double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
                 //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
-                double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
+                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
+                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj]);
+                
+                // find the proba, not the certainty
+                double proba = combinedProbas[0][idmap[xyz]];
+                if (combinedLabels[0][idmap[xyz]]!=obj) {
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][idmap[xyz]]==obj) {
+                            proba = combinedProbas[b][idmap[xyz]];
+                            b=nbest;
+                        }
+                    }
+                }
+                double pprob = FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
                 
                // double pstop = pvol*pdiff;
-                double pstop = pvol*pcert;
+                double pstop = pvol*pcert*pprob;
                 if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
                     bestproba[obj] = pstop;
                     bestvol[obj] = vol[obj];
@@ -2217,8 +2350,6 @@ public class ConditionalShapeSegmentation {
                 }
             }
         }
-        System.out.println("Average volumes: ");
-        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
         System.out.println("\nOptimized volumes: ");
         for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
         // re-run one last time to get the segmentation
@@ -2274,11 +2405,12 @@ public class ConditionalShapeSegmentation {
                 int obj = labels[idmap[xyz]];
                 for (int best=0;best<nbest;best++) {
                     if (combinedLabels[best][idmap[xyz]]==obj) {
-                       if (best==0) {
+                        /*if (best==0) {
                             finalProba[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
                         } else {
                             finalProba[xyz] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
-                        }
+                        }*/
+                        finalProba[xyz] = combinedProbas[best][idmap[xyz]];
                         best=nbest;
                     }
                 }
@@ -2287,7 +2419,7 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
-	/*
+	
 	public void optimalCertaintyThreshold() {
 	    // main idea: region growing from inside, until it reaches the boundaries (single object constraint)
 	    
@@ -2339,13 +2471,15 @@ public class ConditionalShapeSegmentation {
             heap.addValue(bestscore[obj],start[obj],(byte)obj);
             dev[obj] /= (double)ndev[obj];
         }
+        double[] vol = new double[nobj];
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
             int xyz = heap.getFirstId();
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
-                if (vol[obj]<bestvol[obj]) {
+                //if (vol[obj]<bestvol[obj]) {
+                if (score>0) {
                     // update the values
                     vol[obj]+=rx*ry*rz;
                     labels[idmap[xyz]] = obj;
@@ -2383,7 +2517,7 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}*/
+	}
 	
 	public void mappedOptimalVolumeThreshold(float spread, float scale, boolean certainty) {
 	    // main idea: region growing from inside, until within volume prior
@@ -2783,7 +2917,7 @@ public class ConditionalShapeSegmentation {
         return;            
 	}
 
-	/*
+	
 	public void mappedOptimalCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a "certainty" close to posterior
@@ -2906,6 +3040,6 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
-	*/
+	
 }
 
