@@ -1917,7 +1917,7 @@ public class ConditionalShapeSegmentation {
 
 		target = null;
 	}
-	
+	/*
 	public void maximumPosteriorThreshold() {
         // final segmentation: collapse onto result images
         finalLabel = new int[nxyz];
@@ -1929,8 +1929,8 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}
-	
+	}*/
+	/*
 	public void optimalVolumeThreshold(float spread, float scale, boolean certainty) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
@@ -2120,7 +2120,7 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}
+	}*/
 		
 	private int[] atlasVolumeLabels(float[] pval, int[] lval) {
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
@@ -2198,14 +2198,16 @@ public class ConditionalShapeSegmentation {
 		// important: skip first label as background (allows for unbounded growth)
         for (int obj=1;obj<nobj;obj++) {
 		    // find highest scoring voxel as starting point
-           for (int b=0;b<nbest-1;b++) {
+           for (int b=0;b<nbest;b++) {
                for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
                     int xyz=x+nx*y+nx*ny*z;
                     if (mask[xyz]) {
                         int id = idmap[xyz];
                         if (combinedLabels[b][idmap[xyz]]==obj) {
                             float score;
-                            score = combinedProbas[b][idmap[xyz]]-combinedProbas[b+1][idmap[xyz]];
+                            if (b==0) score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
+                            else score = combinedProbas[b][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
+                            //score = combinedProbas[b][idmap[xyz]];
                             if (score>bestscore[obj]) {
                                 bestscore[obj] = score;
                                 start[obj] = xyz;
@@ -2293,9 +2295,17 @@ public class ConditionalShapeSegmentation {
             if (labels[idmap[xyz]]==0) {
                 //double volmean = objVolumeMean[obj];
                 //double volstdv = objVolumeStdv[obj];
+                
+                // use the number of subjects in posterior estimate?
+                double volmean = 0.9*objVolumeMean[obj]+0.1*voldata[obj];
+                double volstdv = FastMath.sqrt( 0.9*( Numerics.square(objVolumeStdv[obj])
+                                + 0.09*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
+                // or treat prior and posterior equally?
+                /*
                 double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
                 double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
                                 + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
+                                */
                 // compute the joint probability function
                 double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
                 //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
@@ -2314,8 +2324,10 @@ public class ConditionalShapeSegmentation {
                 }
                 double pprob = FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
                 
-               // double pstop = pvol*pdiff;
-                double pstop = pvol*pcert*pprob;
+                //double pstop = pvol*pdiff;
+                //double pstop = pvol*pcert*pprob;
+                //double pstop = pvol*pcert;
+                double pstop = pvol*pprob;
                 if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
                     bestproba[obj] = pstop;
                     bestvol[obj] = vol[obj];
@@ -2328,7 +2340,8 @@ public class ConditionalShapeSegmentation {
                 // run until the volume exceeds the mean volume + n*stdev
                 if (vol[obj]<volmean+spread*volstdv) {
                     // add neighbors
-                    for (byte k = 0; k<6; k++) {
+                    //for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
                             if (mask[ngb]) {
@@ -2337,8 +2350,10 @@ public class ConditionalShapeSegmentation {
                                         if (combinedLabels[best][idmap[ngb]]==obj) {
                                             if (best==0) {
                                                 heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                                                //heap.addValue(combinedProbas[0][idmap[ngb]],ngb,obj);
                                             } else {
                                                 heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
+                                                //heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
                                             }
                                             best=nbest;
                                         }
@@ -2373,7 +2388,8 @@ public class ConditionalShapeSegmentation {
                     labels[idmap[xyz]] = obj;
                 
                     // add neighbors
-                    for (byte k = 0; k<6; k++) {
+                    //for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
                             if (mask[ngb]) {
@@ -2382,8 +2398,10 @@ public class ConditionalShapeSegmentation {
                                         if (combinedLabels[best][idmap[ngb]]==obj) {
                                             if (best==0) {
                                                 heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
+                                                //heap.addValue(combinedProbas[0][idmap[ngb]],ngb,obj);
                                             } else {
                                                 heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
+                                                //heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
                                             }
                                             best=nbest;
                                         }
@@ -2419,7 +2437,7 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
-	
+	/*
 	public void optimalCertaintyThreshold() {
 	    // main idea: region growing from inside, until it reaches the boundaries (single object constraint)
 	    
@@ -2517,8 +2535,8 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}
-	
+	}*/
+	/*
 	public void mappedOptimalVolumeThreshold(float spread, float scale, boolean certainty) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
@@ -2699,7 +2717,7 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}
+	}*/
 	
 	public void mappedOptimalVolumeCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
@@ -2917,7 +2935,7 @@ public class ConditionalShapeSegmentation {
         return;            
 	}
 
-	
+	/*
 	public void mappedOptimalCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a "certainty" close to posterior
@@ -3039,7 +3057,7 @@ public class ConditionalShapeSegmentation {
             }
         }
         return;            
-	}
+	}*/
 	
 }
 
