@@ -2525,9 +2525,9 @@ public class ConditionalShapeSegmentation {
         }
         // Posterior volumes:
         for (int obj=1;obj<nobj;obj++) {
-            double volmean = 0.9*objVolumeMean[obj]+0.1*voldata[obj];
-            double volstdv = FastMath.sqrt( 0.9*( Numerics.square(objVolumeStdv[obj])
-                                + 0.09*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
+            double volmean = 0.5*objVolumeMean[obj]+0.5*voldata[obj];
+            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
+                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
             System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
             System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
             objVolumeMean[obj] = (float)volmean;
