@@ -1647,6 +1647,45 @@ public class ConditionalShapeSegmentation {
         }
     }
 
+	public final void collapseSpatialPriorMaps() {	    
+        for (int id=0;id<ndata;id++) {
+            double[][] priors = new double[nobj][nobj];
+            for (int best=0;best<nbest;best++) {
+                int obj1 = Numerics.floor(spatialLabels[best][id]/100)-1;
+                int obj2 = spatialLabels[best][id]-(obj1+1)*100-1;
+                priors[obj1][obj2] = spatialProbas[best][id];
+            }
+            if (sumPosterior) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                   priors[obj1][obj1] += priors[obj1][obj2];
+                   priors[obj1][obj2] = 0.0;
+                }
+            } else if (maxPosterior) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                    priors[obj1][obj1] = Numerics.max(priors[obj1][obj1],priors[obj1][obj2]);
+                    priors[obj1][obj2] = 0.0;
+                }
+            }
+            for (int best=0;best<nbest;best++) {
+                int best1=0;
+                int best2=0;
+                    
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    if (priors[obj1][obj2]>priors[best1][best2]) {
+                        best1 = obj1;
+                        best2 = obj2;
+                    }
+                }
+                // sub optimal labeling, but easy to read
+                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
+                spatialLabels[best][id] = best1;
+                spatialProbas[best][id] = (float)priors[best1][best2];
+                // remove best value
+                priors[best1][best2] = 0.0;
+ 		    }
+        }
+    }
+
 	public final void strictSimilarityDiffusion(int nngb) {	
 		
 		float[][] target = targetImages;
