@@ -75,6 +75,7 @@ public class LocalComplexPCADenoising {
 	//public final void setWindowSize(int in) { winSize = in; }
 	public final void setUnwrapPhase(boolean in) { unwrap = in; }
 	public final void setProcessSlabIn2D(boolean in) { slab2D = in; }
+	public final void setRandomMatrixTheory(boolean in) { randomMatrix = in; }
 	
 	//public final void setMagnitudeTVSubtraction(boolean in) { tvmag = in; }
 	//public final void setPhaseTVSubtraction(boolean in) { tvphs = in; }
@@ -327,7 +328,8 @@ public class LocalComplexPCADenoising {
                         used[n] = true;   
                     }
                     for (int n=nkept+1;n<ndim;n++) {
-                        used[n] = false;   
+                        used[n] = false;
+                        nzero++;
                     }
                 } else {
                     // simple version: compute the standard deviation of the patch
