@@ -505,11 +505,13 @@ public class ConditionalShapeSegmentation {
                     for (int obj=0;obj<nobj-1;obj++) {
                         if (lvlImages[sub][obj][xyz]<mindist) mindist = lvlImages[sub][obj][xyz];
                     }
+                    /*
                     if (mindist<boundary) {
                         background[xyz] = -mindist;
                     } else {
                         background[xyz] = mindist;
-                    }
+                    }*/
+                    background[xyz] = -mindist;
                 }
                 InflateGdm gdm = new InflateGdm(background, nx, ny, nz, rx, ry, rz, bgmask, 0.4f, 0.4f, "no", null);
                 gdm.evolveNarrowBand(0, 1.0f);
@@ -527,7 +529,8 @@ public class ConditionalShapeSegmentation {
 		ndata = 0;
 		for (int xyz=0;xyz<nxyz;xyz++) {
 		    float mindist = boundary;
-            for (int sub=0;sub<nsub;sub++) for (int obj=0;obj<nobj;obj++) {
+		    // skip the background label (bg must be the first label always)
+            for (int sub=0;sub<nsub;sub++) for (int obj=1;obj<nobj;obj++) {
                 if (levelsets[sub][obj][xyz]<mindist) mindist = levelsets[sub][obj][xyz];
             }
             if (mindist<boundary) {
