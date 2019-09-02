@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# location of the JAVA command to use
+JAVAC=/usr/lib/jvm/java-8-openjdk-amd64/bin/javac
+
+# location of the code
+IMCN=/home/pilou/Code/github/imcn-imaging
+
+# mipav command
+echo "compile $@ ..."
+$JAVAC -classpath $IMCN:$IMCN/lib/* -server -g -O -deprecation -encoding UTF-8 $@
+
