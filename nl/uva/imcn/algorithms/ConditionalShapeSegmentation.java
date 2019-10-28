@@ -32,23 +32,28 @@ public class ConditionalShapeSegmentation {
 	private int nc;
 	private int nbest = 16;
 	
-	private float deltaIn = 2.0f;
+	private float deltaIn = 2.0f; // this parameter might have a big effect
 	private float deltaOut = 0.0f;
-	private float boundary = 10.0f;
+	private float boundary = 10.0f; // tricky: it should be large enough not to crop enlarged structures
+	// these have been tested: could be hard-coded
 	private boolean modelBackground = true;
-	private boolean cancelBackground = true;
+	private boolean cancelBackground = false;
 	private boolean cancelAll = false;
 	private boolean sumPosterior = false;
-	private boolean maxPosterior = false;
-	private int maxiter = 0;
-	private float maxdiff = 0.01f;
+	private boolean maxPosterior = true;
+	private int maxiter = 100;
+	private float maxdiff = 0.1f;
 	//private boolean topoParam = true;
 	//private     String	            lutdir = null;
+	// these have been tested: could be hard-coded
 	private double top = 95.0;
 	private boolean rescaleProbas = true;
 	private boolean rescaleIntensities = true;
 	private boolean modelHistogram = true;
 	private boolean rescaleHistograms = true;
+	
+	// more things to tune? small & variable structures seem to vanish a bit fast
+	private boolean scalePriors = true;
 	
 	private final float INF = 1e9f;
 	
@@ -585,7 +590,12 @@ public class ConditionalShapeSegmentation {
                 
                 double sigma2 = var+Numerics.max(deltaOut, deltaIn, 1.0);
                 sigma2 *= sigma2;
-                priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
+                // when scaling by the variance, it penalizes more strongly variable regions -> they get a weaker prior
+                // maybe a good thing? not entirely sure...
+                if (scalePriors)
+                    priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
+                else
+                    priors[obj1][obj2] = FastMath.exp( -0.5*mean*mean/sigma2 );
  			}
             for (int best=0;best<nbest;best++) {
                 int best1=0;

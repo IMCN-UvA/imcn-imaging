@@ -98,42 +98,72 @@ public class SomSurfaceCoordinates {
 		System.out.println("som output");
 		// output: warp som grid onto surface space
 		float[][] som = algorithm.getSomWeights();
+		boolean[] lattice = algorithm.getSomShape();
 		int nx = somSize;
 		int ny = somSize;
 
-		System.out.println("som points: "+nx*ny);
-		mappedSomPoints = new float[nx*ny*3];
+		// trim the missing points
+		int npts = 0;
 		for (int xy=0;xy<nx*ny;xy++) {
-		     mappedSomPoints[0+3*xy] = som[0][xy];
-		     mappedSomPoints[1+3*xy] = som[1][xy];
-		     mappedSomPoints[2+3*xy] = som[2][xy];
+		    if (lattice[xy]) npts++;
 		}
 		
-		int ntriangles = (nx-1)*(ny-1)*2;
+		System.out.println("som points: "+npts);
+		mappedSomPoints = new float[npts*3];
+		int[] mappedId = new int[nx*ny];
+		int id=0;
+		for (int xy=0;xy<nx*ny;xy++) if (lattice[xy]) {
+		     mappedSomPoints[0+3*id] = som[0][xy];
+		     mappedSomPoints[1+3*id] = som[1][xy];
+		     mappedSomPoints[2+3*id] = som[2][xy];
+		     mappedId[xy] = id;
+		     id++;
+		}
+		
+		// trim the missing triangles
+		int ntriangles = 0;
+		for (int x=0;x<nx-1;x++) {
+		     for (int y=0;y<ny-1;y++) { 
+		         if (lattice[x+nx*y] && lattice[x+1+nx*y] && lattice[x+nx*(y+1)]) {
+		             ntriangles++;
+		         }
+		         if (lattice[x+1+nx*y] && lattice[x+nx*(y+1)] && lattice[x+1+nx*(y+1)]) {
+		             ntriangles++;
+		         }
+		     }
+		}
 		System.out.println("som triangles: "+ntriangles);
 		mappedSomTriangles = new int[3*ntriangles];
 		int tr=0;
 		for (int x=0;x<nx-1;x++) {
 		     for (int y=0;y<ny-1;y++) {
-		         // top triangle
-		         mappedSomTriangles[0+tr] = x+nx*y;
-		         mappedSomTriangles[1+tr] = x+1+nx*y;
-		         mappedSomTriangles[2+tr] = x+nx*(y+1);
-		         tr+=3;
-		         // bottom triangle
-		         mappedSomTriangles[0+tr] = x+1+nx*y;
-		         mappedSomTriangles[1+tr] = x+nx*(y+1);
-		         mappedSomTriangles[2+tr] = x+1+nx*(y+1);
-		         tr+=3;
+		         if (lattice[x+nx*y] && lattice[x+1+nx*y] && lattice[x+nx*(y+1)]) {
+		             // top triangle
+                     mappedSomTriangles[0+tr] = mappedId[x+nx*y];
+                     mappedSomTriangles[1+tr] = mappedId[x+1+nx*y];
+                     mappedSomTriangles[2+tr] = mappedId[x+nx*(y+1)];
+                     tr+=3;
+                 }
+		         if (lattice[x+1+nx*y] && lattice[x+nx*(y+1)] && lattice[x+1+nx*(y+1)]) {
+                     // bottom triangle
+                     mappedSomTriangles[0+tr] = mappedId[x+1+nx*y];
+                     mappedSomTriangles[1+tr] = mappedId[x+nx*(y+1)];
+                     mappedSomTriangles[2+tr] = mappedId[x+1+nx*(y+1)];
+                     tr+=3;
+                 }
 		     }
 		}
-		System.out.println("som values: "+nx*ny);
-		mappedSomValues = new float[2*nx*ny];
+		System.out.println("som values: "+npts);
+		mappedSomValues = new float[2*npts];
+		int mp=0;
 		for (int x=0;x<nx;x++) {
 		    for (int y=0;y<ny;y++) {
 		        int xy = x+nx*y;
-                mappedSomValues[xy+0*nx*ny] = x;
-                mappedSomValues[xy+1*nx*ny] = y;
+                if (lattice[xy]) {
+                    mappedSomValues[mp+0*npts] = x;
+                    mappedSomValues[mp+1*npts] = y;
+                    mp++;
+                }
             }
 		}
 		System.out.println("done");

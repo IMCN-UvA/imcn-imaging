@@ -33,6 +33,9 @@ public class BasicSom {
 	private     int             iter;           // max number of iterations
 	private     int             tlearn;           // max number of iterations
 	
+	// shpae parameters
+	private    boolean[]    lattice;
+	
 	// computation variables
 	private     float[]     prev;
 	private     float       kernelAlpha;
@@ -74,11 +77,21 @@ public class BasicSom {
 		try {
 		    som = new float[dim][nsom]; 
 		    prev = new float[dim];
+		    lattice = new boolean[nsom];
 		} catch (OutOfMemoryError e){
 			finalize();
 			System.out.println(e.getMessage());
 			return;
 		}
+		
+		// build a circular lattice
+		for (int x=0;x<nx;x++) for (int y=0;y<ny;y++) for (int z=0;z<nz;z++) {
+		    if ( (x-nx/2)*(x-nx/2)+(y-ny/2)*(y-ny/2)+(z-nz/2)*(z-nz/2) < nx+1) {
+		        lattice[x+nx*y+nx*ny*z] = true;
+		    } else {
+		        lattice[x+nx*y+nx*ny*z] = false;
+		    }
+		}    
 		
 		if (debug) System.out.print("SOM:initialisation\n");
 	}
@@ -90,6 +103,8 @@ public class BasicSom {
 	}
 	
 	public final float[][] getSomWeights() { return som; }
+	
+	public final boolean[] getSomShape() { return lattice; }
 	
 	public final float[][] mapSomOnData2D() {
 	    float[][] map = new float[ndata][2];
@@ -162,7 +177,7 @@ public class BasicSom {
                 if (data[n][d] < datamin[d]) datamin[d] = data[n][d];
             }
         }
-        for (int s=0;s<nsom;s++) for (int d=0;d<dim;d++) {
+        for (int s=0;s<nsom;s++) if (lattice[s]) for (int d=0;d<dim;d++) {
             som[d][s] = (float)(datamin[d] + (datamax[d]-datamin[d])*FastMath.random());
         }
 	}
@@ -232,13 +247,15 @@ public class BasicSom {
             eig1[i] = (float)(sig1*svd.getV().get(i,0));                        
             eig2[i] = (float)(sig2*svd.getV().get(i,1));
         }
-	    // map the avg +/- eigenvalues to som diemnsions
+	    // map the avg +/- eigenvalues to som dimensions
         for (int x=0;x<nx;x++) {
             float dx = 2.0f*(x-(nx-1.0f)/2.0f)/((nx-1.0f)/2.0f);
             for (int y=0;y<ny;y++) {
                 float dy = 2.0f*(y-(ny-1.0f)/2.0f)/((ny-1.0f)/2.0f);
-                for (int d=0;d<dim;d++) {
-                    som[d][x+nx*y] = avg[d] + dx*eig1[d] + dy*eig2[d];
+                if (lattice[x+nx*y]) {
+                    for (int d=0;d<dim;d++) {
+                        som[d][x+nx*y] = avg[d] + dx*eig1[d] + dy*eig2[d];
+                    }
                 }
             }
         }
@@ -252,7 +269,7 @@ public class BasicSom {
         int best = -1;
 
 		distance = INF;
-		for (int n=0;n<nsom;n++) {
+		for (int n=0;n<nsom;n++) if (lattice[n]) {
 		    dist = 0.0f;
 		    for (int d=0;d<dim;d++) dist += (som[d][n]-val[d])*(som[d][n]-val[d]);
 		    if (dist<distance) {
@@ -282,7 +299,7 @@ public class BasicSom {
         
         // compute the update
         float maxdiff = 0.0f;
-        for (int x=xmin;x<xmax;x++) for (int y=ymin;y<ymax;y++) {
+        for (int x=xmin;x<xmax;x++) for (int y=ymin;y<ymax;y++) if (lattice[x+nx*y]) {
             float dist = (x-x0)*(x-x0)+(y-y0)*(y-y0);   
             
             float weight = kernelWeight(dist);
