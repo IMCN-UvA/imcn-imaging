@@ -1481,26 +1481,24 @@ public class ConditionalShapeSegmentation {
                     int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
                      
                     diffused[obj1][obj2] = combinedProbas[best][id];
-                    if (diffused[obj1][obj2]>0) {
-                        float den = ngbw[nngb][id];
-                        diffused[obj1][obj2] *= den;
-                        
-                        for (int n=0;n<nngb;n++) {
-                            int ngb = ngbi[n][id];
-                            float ngbmax = 0.0f;
-                            // max over neighbors ( -> stop at first found)
-                            for (int bestngb=0;bestngb<nbest;bestngb++) {
-                                if (combinedLabels[bestngb][ngb]==combinedProbas[best][id]) {
-                                    ngbmax = combinedProbas[bestngb][ngb];
-                                    bestngb=nbest;
-                                }
+                    float den = ngbw[nngb][id];
+                    diffused[obj1][obj2] *= den;
+                    
+                    for (int n=0;n<nngb;n++) {
+                        int ngb = ngbi[n][id];
+                        float ngbmax = 0.0f;
+                        // max over neighbors ( -> stop at first found)
+                        for (int bestngb=0;bestngb<nbest;bestngb++) {
+                            if (combinedLabels[bestngb][ngb]==combinedProbas[best][id]) {
+                                ngbmax = combinedProbas[bestngb][ngb];
+                                bestngb=nbest;
                             }
-                            //if (ngbmax==0) System.out.print("0");
-                            diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
-                            den += ngbw[n][id];
                         }
-                        diffused[obj1][obj2] /= den;
+                        //if (ngbmax==0) System.out.print("0");
+                        diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
+                        den += ngbw[n][id];
                     }
+                    diffused[obj1][obj2] /= den;
                 }
                 for (int best=0;best<nbest;best++) {
                     int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
