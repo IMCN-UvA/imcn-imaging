@@ -900,6 +900,7 @@ public class ConditionalShapeSegmentation {
             }
         }
         // compute volume mean, stdv of each structure
+        System.out.println("Volume statistics");
         logVolMean = new float[nobj];
         logVolStdv = new float[nobj];
         for (int obj=0;obj<nobj;obj++) {
@@ -917,8 +918,10 @@ public class ConditionalShapeSegmentation {
                 logVolStdv[obj] += Numerics.square(FastMath.log(vols[sub])-logVolMean[obj])/(nsub-1.0f);
             }
             logVolStdv[obj] = (float)FastMath.sqrt(logVolStdv[obj]);
+            System.out.println(obj+" : "+FastMath.exp(logVolMean[obj])+" +/- "+FastMath.exp(logVolStdv[obj]));
         }        
         // same for all interfaces
+        System.out.println("Conditional volume statistics");
         logVolMean2 = new float[nobj][nobj];
         logVolStdv2 = new float[nobj][nobj];
         float[][][] vols = new float[nsub][nobj][nobj];
@@ -929,6 +932,7 @@ public class ConditionalShapeSegmentation {
                 int best2 = -1;
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                     if (Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn)<best) {
+                        best = Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
                         best1 = obj1;
                         best2 = obj2;
                     }
@@ -946,6 +950,7 @@ public class ConditionalShapeSegmentation {
         }
         for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
             logVolStdv2[obj1][obj2] = (float)FastMath.sqrt(logVolStdv2[obj1][obj2]);
+            System.out.println(obj1+"|"+obj2+" : "+FastMath.exp(logVolMean2[obj1][obj2])+" +/- "+FastMath.exp(logVolStdv2[obj1][obj2]));
         }
 		// at this point the atlas data is not used anymore
 		levelsets = null;
