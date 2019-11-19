@@ -32,8 +32,10 @@ public class FuzzyCmeans {
 	private 	float[]			centroids;			// cluster centroids
 	private 	boolean[]		mask;   			// image mask: true for data points
 	private     int[]           id;                 // re-ordering of data by increasing centroid values
-	private static	int 		nx,ny,nz, nxyz;     // images dimensions
-	private static	float 		rx,ry,rz;   		// images resolutions
+	private     int[]           classification;     // hard classification
+	private static	int 		nx,ny,nz, nxyz;     // image dimensions
+	private static	float 		rx,ry,rz;   		// image resolutions
+	private    float            Imin, Imax;         // image range 
 	
 	// parameters
 	private 	int 		clusters;    // number of clusters in original membership: > clusters if outliers
@@ -88,16 +90,19 @@ public class FuzzyCmeans {
 	public final String getVersion() { return "1.0"; };
 
 	// create outputs
-	public final float[] getMembership(int n) { return mems[id[n+1]]; }
+	public final float[] getMembership(int n) { return mems[id[n+1]-1]; }
+   
+    public final int[] getClassification() { return classification; }
    
     public final void execute() {		
 		
         // image range
-        float Imin = INF, Imax = -INF;
+        Imin = INF; 
+        Imax = -INF;
         for (int xyz=0;xyz<nxyz;xyz++) {
             if (image[xyz]<Imin) Imin = image[xyz];
             if (image[xyz]>Imax) Imax = image[xyz];
-        }   
+        }        
 		
         // init all the new arrays
         mems = new float[clusters][nxyz];
@@ -105,7 +110,8 @@ public class FuzzyCmeans {
         prev = new float[clusters];
         if (fuzziness!=2) {
             power = new PowerTable(0.0f , 1.0f , 0.000001f , fuzziness );
-            invpower = new PowerTable(0, (Imax-Imin)*(Imax-Imin), 0.000001f*(Imax-Imin)*(Imax-Imin), 1.0f/(1.0f-fuzziness) );
+            //invpower = new PowerTable(0, (Imax-Imin)*(Imax-Imin), 0.000001f*(Imax-Imin)*(Imax-Imin), 1.0f/(1.0f-fuzziness) );
+            invpower = new PowerTable(0, 1.0f, 0.000001f, 1.0f/(1.0f-fuzziness) );
         } else {
             power = null;
             invpower = null;
@@ -135,7 +141,7 @@ public class FuzzyCmeans {
 		boolean stop = false;
 		if (Niterations >= maxIter) stop = true;
 		while (!stop) {
-			if (verbose) System.out.println("iteration " + Niterations + " (max: " + distance + ")\n");
+			if (verbose) System.out.print("iteration " + Niterations + " (max: " + distance + ") ");
 			
 			// update centroids
 			computeCentroids();
@@ -153,8 +159,19 @@ public class FuzzyCmeans {
 		id = computeCentroidOrder();
         
 		// generate classification map
-		
-		
+		classification = new int[nxyz];
+		for (int xyz=0;xyz<nxyz;xyz++) {
+		    if (mask[xyz]) {
+		        int best=0;
+		        for (int k=1;k<clusters;k++) {
+		            if (mems[k][xyz]>mems[best][xyz]) best = k;
+		        }
+		        classification[xyz] = id[best+1];
+		    } else {
+		        classification[xyz] = id[0];
+		    }
+		}
+		return;
     }
     
     /** 
@@ -182,7 +199,7 @@ public class FuzzyCmeans {
 				for (int k=0;k<clusters;k++) {
 					
 					// data term
-					num = (image[xyz]-centroids[k])*(image[xyz]-centroids[k]);
+					num = (image[xyz]-centroids[k])*(image[xyz]-centroids[k])/((Imax-Imin)*(Imax-Imin));
 					
 					// spatial smoothing
 					if (smoothing > 0.0f) { 
@@ -266,7 +283,7 @@ public class FuzzyCmeans {
 				for (int k=0;k<clusters;k++) {
 					
 					// data term
-					num = (image[xyz]-centroids[k])*(image[xyz]-centroids[k]);
+					num = (image[xyz]-centroids[k])*(image[xyz]-centroids[k])/((Imax-Imin)*(Imax-Imin));
 					
 					// spatial smoothing
 					if (smoothing > 0.0f) { 
@@ -421,10 +438,6 @@ public class FuzzyCmeans {
 			id[k+1] = lowest+1;
 			cent[lowest] = INF;
 		}
-		// keep order for other class types (outliers, etc)
-		for (int k=clusters;k<clusters;k++)
-			id[k+1] = k+1;
-		
         if (debug) {
 			System.out.print("ordering: ("+id[0]);
 			for (int k=0;k<clusters;k++)System.out.print(", "+id[k+1]);
