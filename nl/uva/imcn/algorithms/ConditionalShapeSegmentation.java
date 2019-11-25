@@ -32,7 +32,7 @@ public class ConditionalShapeSegmentation {
 	private int nc;
 	private int nbest = 16;
 	
-	private float deltaIn = 4.0f; // this parameter might have a big effect
+	private float deltaIn = 1.0f; // this parameter might have a big effect
 	private float deltaOut = 0.0f;
 	private float boundary = 10.0f; // tricky: it should be large enough not to crop enlarged structures
 	// these have been tested: could be hard-coded
@@ -57,6 +57,8 @@ public class ConditionalShapeSegmentation {
 	
 	private final float INF = 1e9f;
 	
+	private final int connectivity = 26;
+	
 	// possibly to extend to entire distribution?
 	// model size: nbins x nc x nobj x nobj
 	// benefits: no probability computation, no a priori model
@@ -77,6 +79,9 @@ public class ConditionalShapeSegmentation {
 	
 	private int[][]        combinedLabels;
 	private float[][]      combinedProbas;
+	
+	private int[][]        jointLabels;
+	private float[][]      jointProbas;
 	
 	private int[][]        diffusedLabels;
 	private float[][]      diffusedProbas;
@@ -486,6 +491,27 @@ public class ConditionalShapeSegmentation {
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int best=0;best<nval;best++) {
                 images[xyz+best*nxyz] = combinedLabels[best][idmap[xyz]];
+            }
+        }
+        return images;
+	}
+	
+    public final float[] getJointProbabilityMaps(int nval) { 
+        nval = Numerics.min(nval,nbest);
+        float[] images = new float[nval*nxyz];
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int best=0;best<nval;best++) {
+                images[xyz+best*nxyz] = jointProbas[best][idmap[xyz]];
+            }
+        }
+        return images;
+	}
+	public final int[] getJointProbabilityLabels(int nval) { 
+        nval = Numerics.min(nval,nbest);
+        int[] images = new int[nval*nxyz];
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int best=0;best<nval;best++) {
+                images[xyz+best*nxyz] = jointLabels[best][idmap[xyz]];
             }
         }
         return images;
@@ -1024,7 +1050,7 @@ public class ConditionalShapeSegmentation {
 		System.out.println("\ndone");
 	}
 
-	public final void estimateTarget() {	
+	public final void estimateTarget() {
 		
 		// compute the median of stdevs from atlas -> scale for image distances
 		// use only the j|j labels -> intra class variations
@@ -1262,13 +1288,60 @@ public class ConditionalShapeSegmentation {
 		}
 	}
 	
+	public final void collapseToJointMaps() {
+	    jointLabels = new int[nbest][ndata];
+	    jointProbas = new float[nbest][ndata];
+	    
+        for (int id=0;id<ndata;id++) {
+            double[][] posteriors = new double[nobj][nobj];
+            for (int best=0;best<nbest;best++) {
+                int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
+                int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
+                if (obj1>-1 && obj2>-1)
+                    posteriors[obj1][obj2] = combinedProbas[best][id];
+            }
+            if (sumPosterior) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                   posteriors[obj1][obj1] += posteriors[obj1][obj2];
+                   posteriors[obj1][obj2] = 0.0;
+                }
+            } else if (maxPosterior) {
+                for (int obj1=0;obj1<nobj;obj1++) {
+                    for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                        posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
+                        posteriors[obj1][obj2] = 0.0;
+                    }
+                }
+            }
+            for (int best=0;best<nbest;best++) {
+                int best1=0;
+                //int best2=0;
+                    
+                //for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                for (int obj1=0;obj1<nobj;obj1++) {
+                    if (posteriors[obj1][obj1]>posteriors[best1][best1]) {
+                        best1 = obj1;
+                        //best2 = obj2;
+                    }
+                }
+                // sub optimal labeling, but easy to read
+                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
+                jointLabels[best][id] = best1;
+                jointProbas[best][id] = (float)posteriors[best1][best1];
+                // remove best value
+                posteriors[best1][best1] = 0.0;
+ 		    }
+        }
+    }  
+	
 	public final void collapseConditionalMaps() {	    
         for (int id=0;id<ndata;id++) {
             double[][] posteriors = new double[nobj][nobj];
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
                 int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
-                posteriors[obj1][obj2] = combinedProbas[best][id];
+                if (obj1>-1 && obj2>-1)
+                    posteriors[obj1][obj2] = combinedProbas[best][id];
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1750,6 +1823,9 @@ public class ConditionalShapeSegmentation {
 			System.out.println("LUT loaded from: "+lutdir);
 		}
 		
+		// use a 6-neighborhood for maximum regularity
+		int ngbdist = 2;
+		
 		// here we assume the maps have been collapsed into objects
 		
 		// initialize each boundary from bounding box per structure
@@ -1861,7 +1937,7 @@ public class ConditionalShapeSegmentation {
                             // search for neighbors
                             for (int i=-1;i<=1;i++) for (int j=-1;j<=1;j++) for (int l=-1;l<=1;l++) {
                                 int ngb = xyz+i+nx*j+nx*ny*l;
-                                if (topology[ngb]==0) {
+                                if (topology[ngb]==0 && i*i+j*j+l*l<ngbdist) {
                                     // new neighbors
                                     float nextval = val + mindist;
                                     if (mask[ngb]) {
@@ -1942,6 +2018,9 @@ public class ConditionalShapeSegmentation {
         } else {
 			System.out.println("LUT loaded from: "+lutdir);
 		}
+		
+		// use a 6-neighborhood for maximum regularity
+		int ngbdist = 2;
 		
 		// here we assume the maps have been collapsed into objects
 		
@@ -2061,7 +2140,7 @@ public class ConditionalShapeSegmentation {
                             // search for neighbors
                             for (int i=-1;i<=1;i++) for (int j=-1;j<=1;j++) for (int l=-1;l<=1;l++) {
                                 int ngb = xyz+i+nx*j+nx*ny*l;
-                                if (topology[ngb]==0) {
+                                if (topology[ngb]==0 && i*i+j*j+l*l<ngbdist) {
                                     // new neighbors
                                     float nextval = val + mindist;
                                     int nextlbl = lbl;
@@ -2261,7 +2340,7 @@ public class ConditionalShapeSegmentation {
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": log vol = "+logVolMean[obj]+" log stdv = "+logVolStdv[obj]+" -> "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]\n");
         }   
-        double[] boudnaryDev = new double[nobj];
+        boundaryDev = new double[nobj];
         // Boundary statistics
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": boundary = "+avgbound[obj]+" +/- "+FastMath.sqrt(devbound[obj])+" (difference: "+FastMath.sqrt(devdiff[obj])+")\n");
@@ -2281,6 +2360,7 @@ public class ConditionalShapeSegmentation {
 		BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeapPair.MAXTREE);
 		int[] labels = new int[ndata];
         int[] start = new int[nobj];
+        double[] vol = new double[nobj];
         float[] bestscore = new float[nobj];
 		for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
 		int[][] nextbest = new int[nobj][ndata];
@@ -2332,11 +2412,26 @@ public class ConditionalShapeSegmentation {
                 }
                 if (bestscore[obj]>-INF) b = nbest;
             }
-            heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            // hardcode the starting points?
+            //heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            vol[obj]+= rx*ry*rz;
+            labels[idmap[start[obj]]] = obj;
+            for (byte k = 0; k<connectivity; k++) {
+                int ngb = Ngb.neighborIndex(k, start[obj], nx, ny, nz);
+                if (ngb>0 && ngb<nxyz && mask[ngb]) {
+                    if (labels[idmap[ngb]]==0) {
+                        for (int best=0;best<nbest;best++) {
+                            if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                best=nbest;
+                            }
+                        }
+                    }
+                }
+            }
         }
                 
         float[] prev = new float[nobj];
-        double[] vol = new double[nobj];
         double[] bestvol = new double[nobj];
         double[] bestproba = new double[nobj];
         for (int obj=0;obj<nobj;obj++) {
@@ -2364,7 +2459,8 @@ public class ConditionalShapeSegmentation {
                 //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
                 double pcert = FastMath.exp(-0.5*(score*score)/boundaryDev[obj]);
                 
-                double pstop = pvol*pcert;
+                //double pstop = pvol*pcert;
+                double pstop = pvol;
                 
                 if (pstop>bestproba[obj] && vol[obj]>=FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])) {
                     bestproba[obj] = pstop;
@@ -2374,7 +2470,7 @@ public class ConditionalShapeSegmentation {
                 if (vol[obj]<=FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])) {
                     // add neighbors
                     //for (byte k = 0; k<6; k++) {
-                    for (byte k = 0; k<26; k++) {
+                    for (byte k = 0; k<connectivity; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
                             if (mask[ngb]) {
@@ -2402,7 +2498,23 @@ public class ConditionalShapeSegmentation {
         }
         for(int id=0;id<ndata;id++) labels[id] = 0;
         for (int obj=1;obj<nobj;obj++) {
-            heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            // hardcode the starting points?
+            //heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            vol[obj]+= rx*ry*rz;
+            labels[idmap[start[obj]]] = obj;
+            for (byte k = 0; k<connectivity; k++) {
+                int ngb = Ngb.neighborIndex(k, start[obj], nx, ny, nz);
+                if (ngb>0 && ngb<nxyz && mask[ngb]) {
+                    if (labels[idmap[ngb]]==0) {
+                        for (int best=0;best<nbest;best++) {
+                            if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                best=nbest;
+                            }
+                        }
+                    }
+                }
+            }
         }
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
@@ -2418,7 +2530,7 @@ public class ConditionalShapeSegmentation {
                 
                     // add neighbors
                     //for (byte k = 0; k<6; k++) {
-                    for (byte k = 0; k<26; k++) {
+                    for (byte k = 0; k<connectivity; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
                             if (mask[ngb]) {
