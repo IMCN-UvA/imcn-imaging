@@ -1042,9 +1042,11 @@ public class ConditionalShapeSegmentation {
         }
         for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
             logVolStdv2[obj1][obj2] = (float)FastMath.sqrt(logVolStdv2[obj1][obj2]);
-            System.out.println(obj1+"|"+obj2+" : "+FastMath.exp(logVolMean2[obj1][obj2])
-                                             +" ["+FastMath.exp(logVolMean2[obj1][obj2]-logVolStdv2[obj1][obj2])
-                                             +", "+FastMath.exp(logVolMean2[obj1][obj2]+logVolStdv2[obj1][obj2])+"]");
+            if (logVolMean2[obj1][obj2]>0) {
+                System.out.println(obj1+"|"+obj2+" : "+FastMath.exp(logVolMean2[obj1][obj2])
+                                                 +" ["+FastMath.exp(logVolMean2[obj1][obj2]-logVolStdv2[obj1][obj2])
+                                                 +", "+FastMath.exp(logVolMean2[obj1][obj2]+logVolStdv2[obj1][obj2])+"]");
+            }
         }
 		// at this point the atlas data is not used anymore
 		levelsets = null;
