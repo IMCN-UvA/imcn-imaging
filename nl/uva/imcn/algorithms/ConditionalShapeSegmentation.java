@@ -99,6 +99,8 @@ public class ConditionalShapeSegmentation {
 	private float[][]        logVolStdv2;
 
 	private double[]        boundaryDev;
+	private double[]        objAvg;
+	private double[]        objDev;
 	
 	private int nx, ny, nz, nxyz;
 	private float rx, ry, rz;
@@ -1297,8 +1299,7 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
                 int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
-                if (obj1>-1 && obj2>-1)
-                    posteriors[obj1][obj2] = combinedProbas[best][id];
+                posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1306,26 +1307,20 @@ public class ConditionalShapeSegmentation {
                    posteriors[obj1][obj2] = 0.0;
                 }
             } else if (maxPosterior) {
-                for (int obj1=0;obj1<nobj;obj1++) {
-                    for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
-                        posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
-                        posteriors[obj1][obj2] = 0.0;
-                    }
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                    posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
+                    posteriors[obj1][obj2] = 0.0;
                 }
             }
             for (int best=0;best<nbest;best++) {
                 int best1=0;
-                //int best2=0;
                     
-                //for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                 for (int obj1=0;obj1<nobj;obj1++) {
                     if (posteriors[obj1][obj1]>posteriors[best1][best1]) {
                         best1 = obj1;
-                        //best2 = obj2;
                     }
                 }
                 // sub optimal labeling, but easy to read
-                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
                 jointLabels[best][id] = best1;
                 jointProbas[best][id] = (float)posteriors[best1][best1];
                 // remove best value
@@ -1340,8 +1335,7 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
                 int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
-                if (obj1>-1 && obj2>-1)
-                    posteriors[obj1][obj2] = combinedProbas[best][id];
+                posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1349,26 +1343,19 @@ public class ConditionalShapeSegmentation {
                    posteriors[obj1][obj2] = 0.0;
                 }
             } else if (maxPosterior) {
-                for (int obj1=0;obj1<nobj;obj1++) {
-                    for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
-                        posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
-                        posteriors[obj1][obj2] = 0.0;
-                    }
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                    posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
+                    posteriors[obj1][obj2] = 0.0;
                 }
             }
             for (int best=0;best<nbest;best++) {
                 int best1=0;
-                //int best2=0;
-                    
-                //for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                 for (int obj1=0;obj1<nobj;obj1++) {
                     if (posteriors[obj1][obj1]>posteriors[best1][best1]) {
                         best1 = obj1;
-                        //best2 = obj2;
                     }
                 }
                 // sub optimal labeling, but easy to read
-                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
                 combinedLabels[best][id] = best1;
                 combinedProbas[best][id] = (float)posteriors[best1][best1];
                 // remove best value
@@ -1383,7 +1370,7 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(spatialLabels[best][id]/100)-1;
                 int obj2 = spatialLabels[best][id]-(obj1+1)*100-1;
-                priors[obj1][obj2] = spatialProbas[best][id];
+                priors[obj1][obj2] =  Numerics.max(priors[obj1][obj2],spatialProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1398,17 +1385,12 @@ public class ConditionalShapeSegmentation {
             }
             for (int best=0;best<nbest;best++) {
                 int best1=0;
-                //int best2=0;
-                    
-                //for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
                 for (int obj1=0;obj1<nobj;obj1++) {
                     if (priors[obj1][obj1]>priors[best1][best1]) {
                         best1 = obj1;
-                        //best2 = obj2;
                     }
                 }
                 // sub optimal labeling, but easy to read
-                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
                 spatialLabels[best][id] = best1;
                 spatialProbas[best][id] = (float)priors[best1][best1];
                 // remove best value
@@ -1871,7 +1853,7 @@ public class ConditionalShapeSegmentation {
         BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeap2D.MINTREE);
 		// important: skip first label as background (allows for unbounded growth)
         for (byte obj=1;obj<nobj;obj++) {
-            System.out.println("Structure "+obj+": topology correction");
+            System.out.print("Structure "+obj+": topology correction");
             
 		    byte[] topology = new byte[nxyz];
 		    int[] label = new int[nxyz];
@@ -1918,6 +1900,7 @@ public class ConditionalShapeSegmentation {
 		        }
 		    }
 		    // propagate
+		    int ncritical = 0;
 		    while (heap.isNotEmpty()) {
                 float val = heap.getFirst();
                 int xyz = heap.getFirstId1();
@@ -1975,11 +1958,12 @@ public class ConditionalShapeSegmentation {
                         } else {
                             // mark as critical, but don't add it to the heap just yet
                             topology[xyz] = -1;
-                            System.out.print(".");
+                            ncritical++;
                         }
 		            }
 		        }
 		    }
+		    System.out.println(" critical points: "+ncritical);
 		    // update the combined probas with new values
             for (int x=0;x<nx;x++) for (int y=0;y<ny;y++) for (int z=0;z<nz;z++) {
                 int xyz = x + nx*y + nx*ny*z;
@@ -2149,10 +2133,14 @@ public class ConditionalShapeSegmentation {
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": log vol = "+logVolMean[obj]+" log stdv = "+logVolStdv[obj]+" -> "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]\n");
         }   
+        objAvg = new double[nobj];
+        objDev = new double[nobj];
         boundaryDev = new double[nobj];
         // Boundary statistics
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": boundary = "+avgbound[obj]+" +/- "+FastMath.sqrt(devbound[obj])+" (difference: "+FastMath.sqrt(devdiff[obj])+")\n");
+            objAvg[obj] = avgbound[obj];
+            objDev[obj] = devbound[obj];
             boundaryDev[obj] = devdiff[obj];
         }   
         // Starting points
@@ -2265,7 +2253,14 @@ public class ConditionalShapeSegmentation {
                                                *(FastMath.log(Numerics.max(1.0,vol[obj]))-logVolMean[obj])
                                                /Numerics.max(0.0001,(logVolStdv[obj]*logVolStdv[obj])));
                 //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
-                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
+                /*
+                double pcert = 0.5;
+                for (int best=0;best<nbest;best++) {
+                    if (combinedLabels[best][idmap[xyz]]==obj1obj2) {
+                        pcert = FastMath.exp(-0.5*Numerics.square(combinedProbas[best][idmap[xyz]]-objAvg[obj])/objDev[obj]);
+                    }
+                }
+                */
                 //double pcert = FastMath.exp(-0.5*(score*score)/boundaryDev[obj]);
                 
                 //double pstop = pvol*pcert;
