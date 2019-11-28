@@ -1301,7 +1301,8 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
                 int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
-                posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
+                if (obj1>-1 && obj2>-1)
+                    posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1337,7 +1338,8 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
                 int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
-                posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
+                if (obj1>-1 && obj2>-1)
+                    posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1372,7 +1374,8 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(spatialLabels[best][id]/100)-1;
                 int obj2 = spatialLabels[best][id]-(obj1+1)*100-1;
-                priors[obj1][obj2] =  Numerics.max(priors[obj1][obj2],spatialProbas[best][id]);
+                if (obj1>-1 && obj2>-1)
+                    priors[obj1][obj2] =  Numerics.max(priors[obj1][obj2],spatialProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1471,7 +1474,7 @@ public class ConditionalShapeSegmentation {
                     
                     for (int best=0;best<nbest;best++) {
                         if (combinedLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                            diffused[obj1][obj2] = combinedProbas[best][id];
+                            diffused[obj1][obj2] = Numerics.max(diffused[obj1][obj2],combinedProbas[best][id]);
                         }
                     }
                     if (diffused[obj1][obj2]>0) {
@@ -2365,7 +2368,7 @@ public class ConditionalShapeSegmentation {
                 int obj = labels[idmap[xyz]];
                 for (int best=0;best<nbest;best++) {
                     if (combinedLabels[best][idmap[xyz]]>100*(obj+1) && combinedLabels[best][idmap[xyz]]<100*(obj+2)) {
-                        finalProba[xyz] = combinedProbas[best][idmap[xyz]];
+                        finalProba[xyz] = Numerics.max(finalProba[xyz],combinedProbas[best][idmap[xyz]]);
                         best=nbest;
                     }
                 }
