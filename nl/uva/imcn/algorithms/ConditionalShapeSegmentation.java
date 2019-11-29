@@ -1790,6 +1790,174 @@ public class ConditionalShapeSegmentation {
         return labels;            
 	}
 	
+	public final void fastCombinedSimilarityDiffusion(int nngb) {	
+		
+		float[][] target = targetImages;
+		// add a local diffusion step?
+		System.out.print("Diffusion step: \n");
+		
+		// graph = N-most likely neihgbors (based on target intensity)
+		System.out.print("Build similarity neighborhood\n");
+ 		ngbw = new float[nngb+1][ndata];
+		int[][] ngbi = new int[nngb][ndata];
+		float[] ngbsim = new float[26];
+		
+		for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+		    int xyz = x+nx*y+nx*ny*z;
+		    if (mask[xyz]) {
+		        for (byte d=0;d<26;d++) {
+		            int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
+		            if (mask[ngb]) {
+		                ngbsim[d] = 1.0f;
+		                for (int c=0;c<nc;c++) {
+		                    //ngbsim[d] *= 1.0f/Numerics.max(1e-6,Numerics.abs(target[c][xyz]-target[c][ngb])/medstdv[c]);
+                            ngbsim[d] *= (float)FastMath.exp( -0.5/nc*(target[c][xyz]-target[c][ngb])*(target[c][xyz]-target[c][ngb])
+                                         /(medstdv[c]*medstdv[c]) );
+                        }
+                        //if (ngbsim[d]==0) System.out.print("!");
+                    } else {
+                        ngbsim[d] = 0.0f;
+                    }
+                }
+                // choose the N best and worst ones
+                ngbw[nngb][idmap[xyz]] = 0.0f;
+                for (int n=0;n<nngb;n++) {
+                    byte best=0;
+                        
+                    for (byte d=0;d<26;d++)
+                        if (Numerics.max(ngbsim[d],1.0f-ngbsim[d])>Numerics.max(ngbsim[best],1.0-ngbsim[best])) 
+                            best = d;
+                    
+                    if (ngbsim[best]>0.5f) ngbw[n][idmap[xyz]] = ngbsim[best];
+                    else ngbw[n][idmap[xyz]] = ngbsim[best] - 1.0f;
+                    ngbi[n][idmap[xyz]] = idmap[Ngb.neighborIndex(best, xyz, nx,ny,nz)];
+                    ngbw[nngb][idmap[xyz]] += Numerics.abs(ngbsim[best]);
+                    
+                    ngbsim[best] = 0.5f;
+                }
+                //if (ngbw[nngb][idmap[xyz]]==0) System.out.print("0");
+            }
+        }  
+		System.out.print("\n");
+
+		// diffusion only between i|j <-> i|j, not i|j <-> i|k, i|j <-> j|i
+		
+		float[][] diffusedProbas = new float[nbest][ndata]; 
+		int[][] diffusedLabels = new int[nbest][ndata];
+		
+		// first copy the originals, then iterate on the copy?
+		for (int id=0;id<ndata;id++) {
+		    for (int best=0;best<nbest;best++) {
+                diffusedProbas[best][id] = combinedProbas[best][id];
+                diffusedLabels[best][id] = combinedLabels[best][id];
+            }
+        }
+		    		
+		double[][] diffused = new double[nobj][nobj];
+        for (int t=0;t<maxiter;t++) {
+		    for (int id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    diffused[obj1][obj2] = 0.0;
+                }
+                
+                for (int best=0;best<nbest;best++) {
+                    int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                     
+                    diffused[obj1][obj2] = Numerics.max(diffused[obj1][obj2],combinedProbas[best][id]);
+                }
+                for (int best=0;best<nbest;best++) {
+                    int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                     
+                    if (diffused[obj1][obj2]>0) {
+                        float den = ngbw[nngb][id];
+                        diffused[obj1][obj2] *= den;
+                        
+                        for (int n=0;n<nngb;n++) {
+                            if (ngbw[n][id]>0) {
+                                int ngb = ngbi[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
+                                den += ngbw[n][id];
+                            } else if (obj1==obj2) {
+                                int ngb = ngbi[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]>100*(obj1+2)
+                                        && combinedLabels[bestngb][ngb]!=100*(obj1+1)+(obj2+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += -ngbw[n][id]*ngbmax;
+                                den += -ngbw[n][id];
+                            } else {
+                                int ngb = ngbi[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += -ngbw[n][id]*ngbmax;
+                                den += -ngbw[n][id];
+                            }
+                        }
+                        diffused[obj1][obj2] /= den;
+                    }
+                }
+                for (int best=0;best<nbest;best++) {
+                    int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int best2 = Numerics.round(combinedLabels[best][id]-100*(best1+1)-1);
+                        
+                    for (int next=0;next<nbest;next++) {
+                        int obj1 = Numerics.floor(combinedLabels[next][id]/100.0f)-1;
+                        int obj2 = Numerics.round(combinedLabels[next][id]-100*(obj1+1)-1);
+                        if (diffused[obj1][obj2]>diffused[best1][best2]) {
+                            best1 = obj1;
+                            best2 = obj2;
+                        }
+                    }
+                    // sub optimal labeling, but easy to read
+                    diffusedLabels[best][id] = 100*(best1+1)+(best2+1);
+                    diffusedProbas[best][id] = (float)diffused[best1][best2];
+                    // remove best value
+                    diffused[best1][best2] = 0.0;
+                }
+            }
+            double diff = 0.0;
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                if (combinedLabels[best][id] == diffusedLabels[best][id]) {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 0.0;
+                } else {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 1.0;
+                }
+                combinedLabels[best][id] = diffusedLabels[best][id];
+                combinedProbas[best][id] = diffusedProbas[best][id];
+            }
+            System.out.println("diffusion step "+t+": "+(diff/ndata));
+            if (diff/ndata<maxdiff) t=maxiter;
+		}
+
+		target = null;
+	}
+		
 	public void topologyBoundaryDefinition(String connectType, String lutdir) {
 
 	    // load topology LUT
