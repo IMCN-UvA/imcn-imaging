@@ -422,11 +422,10 @@ public class LocalContrastAndTimeDenoising {
         double phsscale = 1.0;
 		float phsmin = 0.0f;
         float phsmax = 0.0f;
-		for (int xyz=0;xyz<nxyz;xyz++) {
-		    mask[xyz] = false;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int t=0;t<nt;t++) for (int c=0;c<nc;c++) {
-		        if (phase[c][xyz][t]<phsmin) phsmin = phase[c][xyz][t];
-		        if (phase[c][xyz][t]>phsmax) phsmax = phase[c][xyz][t];
+		        if (phase[c][index[xyz]][t]<phsmin) phsmin = phase[c][index[xyz]][t];
+		        if (phase[c][index[xyz]][t]>phsmax) phsmax = phase[c][index[xyz]][t];
 		    }
 		}
         phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
@@ -434,31 +433,36 @@ public class LocalContrastAndTimeDenoising {
         // unwrap phase and remove TV global variations
         //if (tvphs) {
         float[] phs = new float[nxyz];
-        float[][][] tvphs = new float[nc][nt][];
+        float[] tv = new float[nxyz];
+        float[][][] tvphs = new float[nc][nmask][nt];
         for (int c=0;c<nc;c++) {
             for (int t=0;t<nt;t++) {
                 System.out.print("global variations removal phase "+(c+1)+", "+(t+1)+"\n");
-                for (int xyz=0;xyz<nxyz;xyz++) phs[xyz] = phase[c][xyz][t];
+                for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) phs[xyz] = phase[c][index[xyz]][t];
                  // unwrap phase images
                 FastMarchingPhaseUnwrapping unwrap = new FastMarchingPhaseUnwrapping();
                 unwrap.setPhaseImage(phs);
+                unwrap.setMask(mask);
                 unwrap.setDimensions(nx,ny,nz);
                 unwrap.setResolutions(rx,ry,rz);
                 unwrap.setTVScale(0.33f);
                 unwrap.setTVPostProcessing("TV-approximation");
                 unwrap.execute();
-                tvphs[c][t] = unwrap.getCorrectedImage();
-                for (int xyz=0;xyz<nxyz;xyz++) phase[c][xyz][t] = (float)(phs[xyz]/phsscale - tvphs[c][t][xyz]);
+                tv = unwrap.getCorrectedImage();
+                for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    phase[c][index[xyz]][t] = (float)(phs[xyz]/phsscale - tv[xyz]);
+                    tvphs[c][index[xyz]][t] = tv[xyz];
+                }
             }
         }
 		
 		// 1. create all the sin, cos images
-		float[][][] images = new float[2*nc][nxyz][nt];
+		float[][][] images = new float[2*nc][nmask][nt];
 		for (int c=0;c<nc;c++) {
-            for (int xyz=0;xyz<nxyz;xyz++) {
+            for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
                 for (int t=0;t<nt;t++) {
-                    images[2*c+0][xyz][t] = (float)(magnitude[c][xyz][t]*FastMath.cos(phase[c][xyz][t]));
-                    images[2*c+1][xyz][t] = (float)(magnitude[c][xyz][t]*FastMath.sin(phase[c][xyz][t]));
+                    images[2*c+0][index[xyz]][t] = (float)(magnitude[c][index[xyz]][t]*FastMath.cos(phase[c][index[xyz]][t]));
+                    images[2*c+1][index[xyz]][t] = (float)(magnitude[c][index[xyz]][t]*FastMath.sin(phase[c][index[xyz]][t]));
                 }
             }
         }
@@ -727,23 +731,23 @@ public class LocalContrastAndTimeDenoising {
             }
         }
         // rebuild magnitude and phase images
-        magnitude = new float[nc][nxyz][nt];
-        phase = new float[nc][nxyz][nt];
+        magnitude = new float[nc][nmask][nt];
+        phase = new float[nc][nmask][nt];
   		for (int c=0;c<nc;c++) {
   		    for (int t=0;t<nt;t++) {
-                for (int xyz=0;xyz<nxyz;xyz++) {
-                    magnitude[c][xyz][t] = (float)FastMath.sqrt(denoised[2*c+0][xyz][t]*denoised[2*c+0][xyz][t]+denoised[2*c+1][xyz][t]*denoised[2*c+1][xyz][t]);
+                for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    magnitude[c][index[xyz]][t] = (float)FastMath.sqrt(denoised[2*c+0][index[xyz]][t]*denoised[2*c+0][index[xyz]][t]+denoised[2*c+1][index[xyz]][t]*denoised[2*c+1][index[xyz]][t]);
                     //invphs[i][xyz] = (float)(FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz])*phsscale[i]);
-                    phase[c][xyz][t] = (float)FastMath.atan2(denoised[2*c+1][xyz][t],denoised[2*c+0][xyz][t]);
+                    phase[c][index[xyz]][t] = (float)FastMath.atan2(denoised[2*c+1][index[xyz]][t],denoised[2*c+0][index[xyz]][t]);
                  }
             }
         }
         
         // opt. add back the TV estimate
-        for (int c=0;c<nc;c++) for (int t=0;t<nt;t++) for (int xyz=0;xyz<nxyz;xyz++) {
-            phase[c][xyz][t] += tvphs[c][t][xyz];
+        for (int c=0;c<nc;c++) for (int t=0;t<nt;t++) for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+            phase[c][index[xyz]][t] += tvphs[c][index[xyz]][t];
             // wrap around phase values and rescale to original values
-            phase[c][xyz][t] = (float)(Numerics.modulo(phase[c][xyz][t], 2.0*FastMath.PI)*phsscale);
+            phase[c][index[xyz]][t] = (float)(Numerics.modulo(phase[c][index[xyz]][t], 2.0*FastMath.PI)*phsscale);
         }
         
   		return;

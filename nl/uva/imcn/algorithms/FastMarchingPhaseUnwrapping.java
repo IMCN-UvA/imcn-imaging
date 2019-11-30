@@ -43,7 +43,7 @@ public class FastMarchingPhaseUnwrapping {
 
 	// data and membership buffers
 	private 	float[] 		phase;  			// original phase image
-	private		boolean[]		mask;				// masking regions not used in computations
+	private		boolean[]		mask = null;				// masking regions not used in computations
     //private 	float[] 		magnitude;  		// original magintude image
 	private 	int[] 			wrapcount;   	    // number of wraps counted
 	private static	int 		nx,ny,nz, nxyz;   		// images dimensions
@@ -72,6 +72,7 @@ public class FastMarchingPhaseUnwrapping {
 	public final void setPhaseImage(float[] val) { inputImage = val; }
 	//public final void setMagnitudeImage(float[] val) { magImage = val; }
 	public final void setMaskImage(int[] val) { maskImage = val; }
+	public final void setMask(boolean[] val) { mask = val; }
 	
 	public final void setTVScale(float val) { tvscale = val; }
 	public final void setTVPostProcessing(String val) { postprocess = val; }
@@ -109,13 +110,15 @@ public class FastMarchingPhaseUnwrapping {
 		int[] label;
 		float[] reliability;
 		try {
-		    mask = new boolean[nx*ny*nz];
-		    if (maskImage==null) {
-                // no mask
-                for (int xyz=0;xyz<nxyz;xyz++) mask[xyz] = true;
-            } else {
-                for (int xyz=0;xyz<nxyz;xyz++) if (maskImage[xyz]>0) mask[xyz] = true;
-                maskImage = null;
+		    if (mask==null) {
+                mask = new boolean[nx*ny*nz];
+                if (maskImage==null) {
+                    // no mask
+                    for (int xyz=0;xyz<nxyz;xyz++) mask[xyz] = true;
+                } else {
+                    for (int xyz=0;xyz<nxyz;xyz++) if (maskImage[xyz]>0) mask[xyz] = true;
+                    maskImage = null;
+                }
             }
 
             boundaries = new boolean[6][nxyz];
