@@ -2111,8 +2111,7 @@ public class ConditionalShapeSegmentation {
                                 float ngbmax = 0.0f;
                                 // max over neighbors ( -> stop at first found)
                                 for (int bestngb=0;bestngb<nbest;bestngb++) {
-                                    if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]>100*(obj1+2)
-                                        && combinedLabels[bestngb][ngb]!=100*(obj1+1)+(obj2+1)) {
+                                    if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]>100*(obj1+2)) {
                                         ngbmax = combinedProbas[bestngb][ngb];
                                         bestngb=nbest;
                                     }
@@ -2125,7 +2124,9 @@ public class ConditionalShapeSegmentation {
                                 float ngbmax = 0.0f;
                                 // max over neighbors ( -> stop at first found)
                                 for (int bestngb=0;bestngb<nbest;bestngb++) {
-                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) 
+                                        || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)
+                                        || combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
                                         ngbmax = combinedProbas[bestngb][ngb];
                                         bestngb=nbest;
                                     }

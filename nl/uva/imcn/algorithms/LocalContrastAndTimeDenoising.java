@@ -238,7 +238,7 @@ public class LocalContrastAndTimeDenoising {
                     
                     boolean process = false;
                     if (ngb3<ntime*nc) {
-                        System.out.print("!patch is too small!\n");
+                        //System.out.print("!patch is too small!\n");
                         process = false;
                     } else {
                         process = true;
@@ -478,7 +478,7 @@ public class LocalContrastAndTimeDenoising {
 		
 		int nsample = Numerics.ceil(nt/tstep);
 		
-        System.out.print("patch dimensions ["+ngb+" x "+(ntime*nc)+"] shifting by ["+nstep+" x "+tstep+"]\n");
+        System.out.print("patch dimensions ["+ngb+" x "+(ntime*2*nc)+"] shifting by ["+nstep+" x "+tstep+"]\n");
 		System.out.print("time steps: "+nsample+" (over "+nt+" time points)\n");
 		
 		/* set beforehand
@@ -566,7 +566,7 @@ public class LocalContrastAndTimeDenoising {
                     
                     boolean process = false;
                     if (ngb3<ntime*2*nc) {
-                        System.out.print("!patch is too small!\n");
+                        //System.out.print("!patch is too small!\n");
                         process = false;
                     } else {
                         process = true;
@@ -690,7 +690,7 @@ public class LocalContrastAndTimeDenoising {
                                         //errmap[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*rsquare);
                                     }
                                     weights[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)wpatch;
-                                    pcadim[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*(ntime-nzero));
+                                    pcadim[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*(ntime*2*nc-nzero));
                                     errmap[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*rsquare);
                                 }
                                 //weights[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
