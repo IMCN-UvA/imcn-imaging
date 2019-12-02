@@ -742,14 +742,14 @@ public class LocalContrastAndTimeDenoising {
                  }
             }
         }
-        
+        /*
         // opt. add back the TV estimate
         for (int c=0;c<nc;c++) for (int t=0;t<nt;t++) for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
             phase[c][index[xyz]][t] += tvphs[c][index[xyz]][t];
             // wrap around phase values and rescale to original values
             phase[c][index[xyz]][t] = (float)(Numerics.modulo(phase[c][index[xyz]][t], 2.0*FastMath.PI)*phsscale);
         }
-        
+        */
   		return;
 	}
 	

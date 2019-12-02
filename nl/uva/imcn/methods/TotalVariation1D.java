@@ -44,8 +44,8 @@ public class TotalVariation1D {
 	private static final byte Z = 2;
 	
 	// for debug
-	static final boolean		debug=true;
-	static final boolean		verbose=true;
+	static final boolean		debug=false;
+	static final boolean		verbose=false;
 	
 	/**
 	 *  constructor
