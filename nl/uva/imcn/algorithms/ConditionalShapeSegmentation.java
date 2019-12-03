@@ -2178,6 +2178,94 @@ public class ConditionalShapeSegmentation {
 		target = null;
 	}
 		
+	public final void globalSmoothing() {	
+		
+		System.out.print("global smoothing step: \n");
+		
+		float[][] smoothedProbas = new float[nbest][ndata]; 
+		int[][] smoothedLabels = new int[nbest][ndata];
+		for (int t=0;t<maxiter;t++) {
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz = x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    int id = idmap[xyz];
+                    double[][] smoothed = new double[nobj][nobj];
+                    for (int best=0;best<nbest;best++) {
+                        int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                        int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                         
+                        if (smoothed[obj1][obj2]==0) {
+                            float den = 0.0f;
+                            for (byte d=0;d<26;d++) {
+                                int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
+                                if (mask[ngb]) {
+                                    float ngbmax = 0.0f;
+                                    if (obj1==obj2) {
+                                        // max over neighbors ( -> stop at first found)
+                                        for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                            if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]<100*(obj1+2)) {
+                                                ngbmax = combinedProbas[bestngb][ngb];
+                                                bestngb=nbest;
+                                            }
+                                        }
+                                    } else {
+                                        // max over neighbors ( -> stop at first found)
+                                        for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                            if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) 
+                                                || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)
+                                                || combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
+                                                ngbmax = combinedProbas[bestngb][ngb];
+                                                bestngb=nbest;
+                                            }
+                                        }
+                                    }
+                                    if (ngbmax>0) {
+                                        smoothed[obj1][obj2] += ngbmax;
+                                        den += 1.0f;
+                                    }
+                                }
+                            }
+                            smoothed[obj1][obj2] += den*combinedProbas[best][id];
+                            if (den>0) smoothed[obj1][obj2] /= 2.0*den;
+                        }
+                    }
+                    for (int best=0;best<nbest;best++) {
+                        int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                        int best2 = Numerics.round(combinedLabels[best][id]-100*(best1+1)-1);
+                            
+                        for (int next=0;next<nbest;next++) {
+                            int obj1 = Numerics.floor(combinedLabels[next][id]/100.0f)-1;
+                            int obj2 = Numerics.round(combinedLabels[next][id]-100*(obj1+1)-1);
+                            if (smoothed[obj1][obj2]>smoothed[best1][best2]) {
+                                best1 = obj1;
+                                best2 = obj2;
+                            }
+                        }
+                        // sub optimal labeling, but easy to read
+                        smoothedLabels[best][id] = 100*(best1+1)+(best2+1);
+                        smoothedProbas[best][id] = (float)smoothed[best1][best2];
+                        // remove best value
+                        smoothed[best1][best2] = 0.0;
+                    }
+                }
+            }
+            double diff = 0.0;
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                if (combinedLabels[best][id] == smoothedLabels[best][id]) {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 0.0;
+                } else {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 1.0;
+                }
+                combinedLabels[best][id] = smoothedLabels[best][id];
+                combinedProbas[best][id] = smoothedProbas[best][id];
+            }
+            System.out.println("smoothing step "+t+": "+(diff/ndata));
+            if (diff/ndata<maxdiff) t=maxiter;
+        }
+    }
+		
 	public void topologyBoundaryDefinition(String connectType, String lutdir) {
 
 	    // load topology LUT

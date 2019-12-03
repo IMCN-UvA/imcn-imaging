@@ -455,6 +455,24 @@ public class LocalContrastAndTimeDenoising {
                 }
             }
         }
+
+        /* also debug
+        // 1. create all the sin, cos images
+		for (int c=0;c<nc;c++) {
+            for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                for (int t=0;t<nt;t++) {
+                    float cos = (float)(magnitude[c][index[xyz]][t]*FastMath.cos(phase[c][index[xyz]][t]));
+                    float sin = (float)(magnitude[c][index[xyz]][t]*FastMath.sin(phase[c][index[xyz]][t]));
+                    magnitude[c][index[xyz]][t] = cos;
+                    phase[c][index[xyz] = sin;
+                }
+            }
+        }*/
+
+        // for debug
+        globalpcadim = new float[nt*nxyz];
+        globalerrmap = new float[nxyz];
+        /* debug
 		
 		// 1. create all the sin, cos images
 		float[][][] images = new float[2*nc][nmask][nt];
@@ -481,48 +499,8 @@ public class LocalContrastAndTimeDenoising {
         System.out.print("patch dimensions ["+ngb+" x "+(ntime*2*nc)+"] shifting by ["+nstep+" x "+tstep+"]\n");
 		System.out.print("time steps: "+nsample+" (over "+nt+" time points)\n");
 		
-		/* set beforehand
-		// first get rid of all the masked values
-		int nmask = 0;
-		mask = new boolean[nxyz];
-		for (int xyz=0;xyz<nxyz;xyz++) {
-		    mask[xyz] = false;
-		    for (int t=0;t<nt;t++) for (int c=0;c<nc;c++) {
-		        if (magnitude[c][xyz][t]!=0) {
-		            mask[xyz] = true;
-		            t = nt;
-		            c = nc;
-		        }
-		    }
-		    if (mask[xyz]) nmask++;
-		}
-		*/
 		System.out.print("masking to "+(100.0*nmask/nxyz)+" percent of the image size\n");
 		
-		/*
-		// build index file
-		index = new int[nxyz];
-		int id=0;
-		for (int xyz=0;xyz<nxyz;xyz++) {
-		    if (mask[xyz]) {
-		        index[xyz] = id;
-                id++;
-            } else {
-                index[xyz] = -1;
-            }
-		}*/
-		
-		/*
-		// re-format the image array
-		float[][][] maskedMagnitude = new float[nc][nmask][nt];
-		id=0;
-		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-		    for (int t=0;t<nt;t++) for (int c=0;c<nc;c++) {
-		        maskedMagnitude[c][id][t] = magnitude[c][xyz][t];
-		    }
-		}
-		magnitude = null;
-		*/
 		denoised = new float[2*nc][nmask][nt];
 		//eigvec = new float[nimg][nxyz];
 		//eigval = new float[nimg][nxyz];
@@ -742,7 +720,6 @@ public class LocalContrastAndTimeDenoising {
                  }
             }
         }
-        /*
         // opt. add back the TV estimate
         for (int c=0;c<nc;c++) for (int t=0;t<nt;t++) for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
             phase[c][index[xyz]][t] += tvphs[c][index[xyz]][t];
