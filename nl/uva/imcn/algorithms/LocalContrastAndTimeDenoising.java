@@ -429,15 +429,18 @@ public class LocalContrastAndTimeDenoising {
 		    }
 		}
         phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
+        System.out.print("phase values in: ["+phsmin+", "+phsmax+"]\n");
         
         // unwrap phase and remove TV global variations
         //if (tvphs) {
+        System.out.print("global variations removal phase: ");
         float[] phs = new float[nxyz];
         float[] tv = new float[nxyz];
         float[][][] tvphs = new float[nc][nmask][nt];
         for (int c=0;c<nc;c++) {
             for (int t=0;t<nt;t++) {
-                System.out.print("global variations removal phase "+(c+1)+", "+(t+1)+"\n");
+                //System.out.print("global variations removal phase "+(c+1)+", "+(t+1)+"\n");
+                System.out.print("["+(c+1)+", "+(t+1)+"]");
                 for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) phs[xyz] = phase[c][index[xyz]][t];
                  // unwrap phase images
                 FastMarchingPhaseUnwrapping unwrap = new FastMarchingPhaseUnwrapping();
@@ -475,7 +478,8 @@ public class LocalContrastAndTimeDenoising {
         /* debug
 		
 		// 1. create all the sin, cos images
-		float[][][] images = new float[2*nc][nmask][nt];
+		System.out.print("\nRebuilding complex images\n");
+        float[][][] images = new float[2*nc][nmask][nt];
 		for (int c=0;c<nc;c++) {
             for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
                 for (int t=0;t<nt;t++) {
@@ -487,8 +491,9 @@ public class LocalContrastAndTimeDenoising {
         magnitude = null;
         phase = null;		
 		
-		// 1. estimate PCA in slabs of NxNxN size CxT windows
-		int ngb = ngbSize;
+		// 2. estimate PCA in slabs of NxNxN size CxT windows
+		System.out.print("Local Complex PCA on time-shifted windows\n");
+        int ngb = ngbSize;
 		int nstep = Numerics.floor(ngb/2.0);
 		
 		int ntime = winSize;
@@ -508,6 +513,7 @@ public class LocalContrastAndTimeDenoising {
 		pcadim = new float[nmask][nt];
 		errmap = new float[nmask][nt];
 		// border issues should be cleaned-up, ignored so far
+		System.out.print("denoising time windows:\n");
 		for (int t=0;t<nt;t+=tstep) {
 		    boolean last = false;
 		    boolean skip = false;
@@ -515,15 +521,15 @@ public class LocalContrastAndTimeDenoising {
 		        if (ntime<nt) {
                     // shift windows at the end of the time domain if needed
                     t = nt-ntime;
-                    System.out.print("step "+(t/tstep)+":");
+                    System.out.print((t/tstep)+"\n");
                     last = true;
                 } else {
                     // skip this round entirely
-                    //System.out.print("x\n");
+                    System.out.print("\n");
                     skip = true;
                 }
             } else {
-                System.out.print("step "+(t/tstep));
+                System.out.print((t/tstep)+" ");
     		}
             if (!skip) {
                 System.out.print("...\n");
