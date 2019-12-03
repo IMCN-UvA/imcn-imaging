@@ -429,7 +429,7 @@ public class LocalContrastAndTimeDenoising {
 		    }
 		}
         phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
-        System.out.print("phase values in: ["+phsmin+", "+phsmax+"]\n");
+        System.out.print("phase values in: ["+phsmin+", "+phsmax+"], scaling factor = "+phsscale+"\n");
         
         // unwrap phase and remove TV global variations
         //if (tvphs) {
@@ -449,12 +449,12 @@ public class LocalContrastAndTimeDenoising {
                 unwrap.setDimensions(nx,ny,nz);
                 unwrap.setResolutions(rx,ry,rz);
                 unwrap.setTVScale(0.33f);
-                unwrap.setTVPostProcessing("TV-approximation");
+                unwrap.setTVPostProcessing("TV-residuals");
                 unwrap.execute();
-                tv = unwrap.getCorrectedImage();
+                float[] flat = unwrap.getCorrectedImage();
                 for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
-                    phase[c][index[xyz]][t] = (float)(phs[xyz]/phsscale - tv[xyz]);
-                    tvphs[c][index[xyz]][t] = tv[xyz];
+                    tvphs[c][index[xyz]][t] = (float)(phase[c][index[xyz]][t]/phsscale + flat[xyz]);
+                    phase[c][index[xyz]][t] = -flat[xyz];
                 }
             }
         }
@@ -472,11 +472,13 @@ public class LocalContrastAndTimeDenoising {
             }
         }*/
 
+        /*
         // for debug
         globalpcadim = new float[nt*nxyz];
         globalerrmap = new float[nxyz];
-        /* debug
-		
+        magnitude = tvphs;
+        */
+       
 		// 1. create all the sin, cos images
 		System.out.print("\nRebuilding complex images\n");
         float[][][] images = new float[2*nc][nmask][nt];
@@ -732,7 +734,7 @@ public class LocalContrastAndTimeDenoising {
             // wrap around phase values and rescale to original values
             phase[c][index[xyz]][t] = (float)(Numerics.modulo(phase[c][index[xyz]][t], 2.0*FastMath.PI)*phsscale);
         }
-        */
+        
   		return;
 	}
 	

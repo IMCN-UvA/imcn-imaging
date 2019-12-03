@@ -2206,6 +2206,7 @@ public class ConditionalShapeSegmentation {
                             for (byte d=0;d<26;d++) {
                                 int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
                                 if (mask[ngb]) {
+                                    ngb = idmap[ngb];
                                     float ngbmax = 0.0f;
                                     if (obj1==obj2) {
                                         // max over neighbors ( -> stop at first found)
@@ -2232,8 +2233,8 @@ public class ConditionalShapeSegmentation {
                                     }
                                 }
                             }
-                            smoothed[obj1][obj2] += den*combinedProbas[best][id];
-                            if (den>0) smoothed[obj1][obj2] /= 2.0*den;
+                            smoothed[obj1][obj2] += 2.0*den*combinedProbas[best][id];
+                            if (den>0) smoothed[obj1][obj2] /= 3.0*den;
                         }
                     }
                     for (int best=0;best<nbest;best++) {
