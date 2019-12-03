@@ -2089,9 +2089,8 @@ public class ConditionalShapeSegmentation {
                     int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
                      
                     if (diffused[obj1][obj2]>0) {
-                        double current = diffused[obj1][obj2];
-                        double den = 2.0*ngbw[nngb][id];
-                        //diffused[obj1][obj2] *= den;
+                        double den = 1.0*ngbw[nngb][id];
+                        diffused[obj1][obj2] *= den;
                         
                         for (int n=0;n<nngb;n++) {
                             if (ngbw[n][id]>0) {
@@ -2105,8 +2104,8 @@ public class ConditionalShapeSegmentation {
                                     }
                                 }
                                 //if (ngbmax==0) System.out.print("0");
-                                diffused[obj1][obj2] += ngbw[n][id]*Numerics.max(0.0,ngbmax-current)/den;
-                                //den += ngbw[n][id];
+                                diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
+                                den += ngbw[n][id];
                             } else if (obj1==obj2) {
                                 int ngb = ngbi[n][id];
                                 float ngbmax = 0.0f;
@@ -2118,26 +2117,34 @@ public class ConditionalShapeSegmentation {
                                     }
                                 }
                                 //if (ngbmax==0) System.out.print("0");
-                                diffused[obj1][obj2] += -ngbw[n][id]*Numerics.max(0.0,ngbmax-current)/den;
-                                //den += -ngbw[n][id];
+                                diffused[obj1][obj2] += -ngbw[n][id]*ngbmax;
+                                den += -ngbw[n][id];
                             } else {
                                 int ngb = ngbi[n][id];
-                                float ngbmax = 0.0f;
+                                float ngbmax0 = 0.0f;
+                                float ngbmax1 = 0.0f;
                                 // max over neighbors ( -> stop at first found)
                                 for (int bestngb=0;bestngb<nbest;bestngb++) {
                                     if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) 
-                                        || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)
                                         || combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
-                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        ngbmax0 = combinedProbas[bestngb][ngb];
                                         bestngb=nbest;
                                     }
                                 }
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1) 
+                                        || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj2+1)) {
+                                        ngbmax1 = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                double ptrans = 0.5 + 0.5*(ngbmax1-ngbmax0);
                                 //if (ngbmax==0) System.out.print("0");
-                                diffused[obj1][obj2] += -ngbw[n][id]*Numerics.max(0.0,ngbmax-current)/den;
-                                //den += -ngbw[n][id];
+                                diffused[obj1][obj2] += -ngbw[n][id]*(ptrans*ngbmax1+(1.0-ptrans)*ngbmax0);
+                                den += -ngbw[n][id];
                             }
                         }
-                        //diffused[obj1][obj2] /= den;
+                        diffused[obj1][obj2] /= den;
                     }
                 }
                 for (int best=0;best<nbest;best++) {
