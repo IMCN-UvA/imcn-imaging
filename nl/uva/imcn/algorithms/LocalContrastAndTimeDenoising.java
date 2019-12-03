@@ -16,7 +16,8 @@ import Jama.*;
 public class LocalContrastAndTimeDenoising {
 
 	// input parameters
-	private		float[][][] 	images = null;
+	private		float[][][] 	magnitude = null;
+	private		float[][][] 	phase = null;
 	private		int			nx, ny, nz, nt, nxyz, nmask;
 	private 	float 		rx, ry, rz;
 
@@ -60,13 +61,23 @@ public class LocalContrastAndTimeDenoising {
         }
 	}
 	    
-	public final void setTimeSerieImageAt(int c, float[] in)  {
-	    if (images==null) {
-	        images = new float[nc][nmask][nt];
+	public final void setTimeSerieMagnitudeAt(int c, float[] in)  {
+	    if (magnitude==null) {
+	        magnitude = new float[nc][nmask][nt];
 	    }
 	    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 	        for (int t=0;t<nt;t++) {
-	            images[c][index[xyz]][t] = in[xyz+t*nxyz];
+	            magnitude[c][index[xyz]][t] = in[xyz+t*nxyz];
+	        }
+	    }
+	}
+	public final void setTimeSeriePhaseAt(int c, float[] in)  {
+	    if (phase==null) {
+	        phase = new float[nc][nmask][nt];
+	    }
+	    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+	        for (int t=0;t<nt;t++) {
+	            phase[c][index[xyz]][t] = in[xyz+t*nxyz];
 	        }
 	    }
 	}
@@ -94,11 +105,21 @@ public class LocalContrastAndTimeDenoising {
 	public final String getVersion() { return "1.0"; }
 
 	// get outputs
-	public float[] getDenoisedImageAt(int c) {
+	public float[] getDenoisedMagnitudeAt(int c) {
 	    float[] combi = new float[nxyz*nt];
 	    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
             for (int t=0;t<nt;t++) {
-                combi[xyz+t*nxyz] = images[c][index[xyz]][t];
+                combi[xyz+t*nxyz] = magnitude[c][index[xyz]][t];
+            }
+	    }
+	    return combi;
+	}
+	
+	public float[] getDenoisedPhaseAt(int c) {
+	    float[] combi = new float[nxyz*nt];
+	    for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+            for (int t=0;t<nt;t++) {
+                combi[xyz+t*nxyz] = phase[c][index[xyz]][t];
             }
 	    }
 	    return combi;
@@ -107,14 +128,18 @@ public class LocalContrastAndTimeDenoising {
 	public float[] getLocalDimensionImage() { return globalpcadim; }
 	public float[] getNoiseFitImage() { return globalerrmap; }
 	
-	
 	public void execute() {
+	    if (phase==null) executeMagnitudeDenoising();
+	    else executeComplexDenoising();
+	}
+	
+	public void executeMagnitudeDenoising() {
 		// this assumes all the inputs are already set
 		
 		// main algorithm
 		
 		// we assume nc 4D images of size nt
-		if (images==null) System.out.print("data stacks not properly initialized!\n");
+		if (magnitude==null) System.out.print("data stacks not properly initialized!\n");
 		
 		// 1. estimate PCA in slabs of NxNxN size CxT windows
 		int ngb = ngbSize;
@@ -135,7 +160,7 @@ public class LocalContrastAndTimeDenoising {
 		for (int xyz=0;xyz<nxyz;xyz++) {
 		    mask[xyz] = false;
 		    for (int t=0;t<nt;t++) for (int c=0;c<nc;c++) {
-		        if (images[c][xyz][t]!=0) {
+		        if (magnitude[c][xyz][t]!=0) {
 		            mask[xyz] = true;
 		            t = nt;
 		            c = nc;
@@ -161,14 +186,14 @@ public class LocalContrastAndTimeDenoising {
 		
 		/*
 		// re-format the image array
-		float[][][] maskedImages = new float[nc][nmask][nt];
+		float[][][] maskedMagnitude = new float[nc][nmask][nt];
 		id=0;
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
 		    for (int t=0;t<nt;t++) for (int c=0;c<nc;c++) {
-		        maskedImages[c][id][t] = images[c][xyz][t];
+		        maskedMagnitude[c][id][t] = magnitude[c][xyz][t];
 		    }
 		}
-		images = null;
+		magnitude = null;
 		*/
 		denoised = new float[nc][nmask][nt];
 		//eigvec = new float[nimg][nxyz];
@@ -213,7 +238,7 @@ public class LocalContrastAndTimeDenoising {
                     
                     boolean process = false;
                     if (ngb3<ntime*nc) {
-                        System.out.print("!patch is too small!\n");
+                        //System.out.print("!patch is too small!\n");
                         process = false;
                     } else {
                         process = true;
@@ -223,8 +248,8 @@ public class LocalContrastAndTimeDenoising {
                         for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
                             if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
                                 for (int ti=t;ti<t+ntime;ti++) for (int c=0;c<nc;c++) {
-                                    //patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = images[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][ti];
-                                    patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti-t+c*ntime] = images[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
+                                    //patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = magnitude[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][ti];
+                                    patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti-t+c*ntime] = magnitude[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
                                 }
                             }
                         }
@@ -365,16 +390,16 @@ public class LocalContrastAndTimeDenoising {
             }
         }
         weights = null;
-        images = denoised;
+        magnitude = denoised;
         
-       // images = new float[nc][nxyz][nt];
+       // magnitude = new float[nc][nxyz][nt];
         globalpcadim = new float[nt*nxyz];
         globalerrmap = new float[nxyz];
         for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
             globalerrmap[xyz] = 1.0f;
             for (int t=0;t<nt;t++) {
                 //for (int c=0;c<nc;c++) {
-                //    images[c][xyz][t] = denoised[c][index[xyz]][t];
+                //    magnitude[c][xyz][t] = denoised[c][index[xyz]][t];
                 //}
                 globalpcadim[xyz+t*nxyz] = pcadim[index[xyz]][t];
                 globalerrmap[xyz] = Numerics.min(globalerrmap[xyz], errmap[index[xyz]][t]);
@@ -383,4 +408,334 @@ public class LocalContrastAndTimeDenoising {
   		return;
 	}
 
+	public void executeComplexDenoising() {
+		// this assumes all the inputs are already set
+		
+		// main algorithm
+		
+		// we assume nc 4D images of size nt
+		if (magnitude==null || phase==null) System.out.print("data stacks not properly initialized!\n");
+		
+		// Phase pre-processing
+		
+		// renormalize phase
+        double phsscale = 1.0;
+		float phsmin = 0.0f;
+        float phsmax = 0.0f;
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int t=0;t<nt;t++) for (int c=0;c<nc;c++) {
+		        if (phase[c][index[xyz]][t]<phsmin) phsmin = phase[c][index[xyz]][t];
+		        if (phase[c][index[xyz]][t]>phsmax) phsmax = phase[c][index[xyz]][t];
+		    }
+		}
+        phsscale = (phsmax-phsmin)/(2.0*FastMath.PI);
+        System.out.print("phase values in: ["+phsmin+", "+phsmax+"], scaling factor = "+phsscale+"\n");
+        
+        // unwrap phase and remove TV global variations
+        //if (tvphs) {
+        System.out.print("global variations removal phase: ");
+        float[] phs = new float[nxyz];
+        float[] tv = new float[nxyz];
+        float[][][] tvphs = new float[nc][nmask][nt];
+        for (int c=0;c<nc;c++) {
+            for (int t=0;t<nt;t++) {
+                //System.out.print("global variations removal phase "+(c+1)+", "+(t+1)+"\n");
+                System.out.print("["+(c+1)+", "+(t+1)+"]");
+                for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) phs[xyz] = phase[c][index[xyz]][t];
+                 // unwrap phase images
+                FastMarchingPhaseUnwrapping unwrap = new FastMarchingPhaseUnwrapping();
+                unwrap.setPhaseImage(phs);
+                unwrap.setMask(mask);
+                unwrap.setDimensions(nx,ny,nz);
+                unwrap.setResolutions(rx,ry,rz);
+                unwrap.setTVScale(0.33f);
+                unwrap.setTVPostProcessing("TV-residuals");
+                unwrap.execute();
+                float[] flat = unwrap.getCorrectedImage();
+                for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    tvphs[c][index[xyz]][t] = (float)(phase[c][index[xyz]][t]/phsscale + flat[xyz]);
+                    phase[c][index[xyz]][t] = -flat[xyz];
+                }
+            }
+        }
+
+        /* also debug
+        // 1. create all the sin, cos images
+		for (int c=0;c<nc;c++) {
+            for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                for (int t=0;t<nt;t++) {
+                    float cos = (float)(magnitude[c][index[xyz]][t]*FastMath.cos(phase[c][index[xyz]][t]));
+                    float sin = (float)(magnitude[c][index[xyz]][t]*FastMath.sin(phase[c][index[xyz]][t]));
+                    magnitude[c][index[xyz]][t] = cos;
+                    phase[c][index[xyz] = sin;
+                }
+            }
+        }*/
+
+        /*
+        // for debug
+        globalpcadim = new float[nt*nxyz];
+        globalerrmap = new float[nxyz];
+        magnitude = tvphs;
+        */
+       
+		// 1. create all the sin, cos images
+		System.out.print("\nRebuilding complex images\n");
+        float[][][] images = new float[2*nc][nmask][nt];
+		for (int c=0;c<nc;c++) {
+            for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                for (int t=0;t<nt;t++) {
+                    images[2*c+0][index[xyz]][t] = (float)(magnitude[c][index[xyz]][t]*FastMath.cos(phase[c][index[xyz]][t]));
+                    images[2*c+1][index[xyz]][t] = (float)(magnitude[c][index[xyz]][t]*FastMath.sin(phase[c][index[xyz]][t]));
+                }
+            }
+        }
+        magnitude = null;
+        phase = null;		
+		
+		// 2. estimate PCA in slabs of NxNxN size CxT windows
+		System.out.print("Local Complex PCA on time-shifted windows\n");
+        int ngb = ngbSize;
+		int nstep = Numerics.floor(ngb/2.0);
+		
+		int ntime = winSize;
+		int tstep = Numerics.floor(ntime/2.0);
+		
+		int nsample = Numerics.ceil(nt/tstep);
+		
+        System.out.print("patch dimensions ["+ngb+" x "+(ntime*2*nc)+"] shifting by ["+nstep+" x "+tstep+"]\n");
+		System.out.print("time steps: "+nsample+" (over "+nt+" time points)\n");
+		
+		System.out.print("masking to "+(100.0*nmask/nxyz)+" percent of the image size\n");
+		
+		denoised = new float[2*nc][nmask][nt];
+		//eigvec = new float[nimg][nxyz];
+		//eigval = new float[nimg][nxyz];
+		float[][] weights = new float[nmask][nt];
+		pcadim = new float[nmask][nt];
+		errmap = new float[nmask][nt];
+		// border issues should be cleaned-up, ignored so far
+		System.out.print("denoising time windows:\n");
+		for (int t=0;t<nt;t+=tstep) {
+		    boolean last = false;
+		    boolean skip = false;
+		    if (t+ntime>nt) {
+		        if (ntime<nt) {
+                    // shift windows at the end of the time domain if needed
+                    t = nt-ntime;
+                    System.out.print((t/tstep)+"\n");
+                    last = true;
+                } else {
+                    // skip this round entirely
+                    System.out.print("\n");
+                    skip = true;
+                }
+            } else {
+                System.out.print((t/tstep)+" ");
+    		}
+            if (!skip) {
+                System.out.print("... ");
+                for (int x=0;x<nx;x+=nstep) for (int y=0;y<ny;y+=nstep) for (int z=0;z<nz;z+=nstep) {
+                    int ngbx = Numerics.min(ngb, nx-x);
+                    int ngby = Numerics.min(ngb, ny-y);
+                    int ngbz = Numerics.min(ngb, nz-z);
+                    int ngb3 = 0;
+                    int[] patchid = new int[ngbx*ngby*ngbz];
+                    for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
+                        if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
+                            patchid[dx+ngbx*dy+ngbx*ngby*dz] = ngb3;
+                            ngb3++;
+                        } else {
+                            patchid[dx+ngbx*dy+ngbx*ngby*dz] = -1;
+                        }
+                    }
+                    
+                    boolean process = false;
+                    if (ngb3<ntime*2*nc) {
+                        //System.out.print("!patch is too small!\n");
+                        process = false;
+                    } else {
+                        process = true;
+                    }
+                    if (process) {
+                        double[][] patch = new double[ngb3][ntime*2*nc];
+                        for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
+                            if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
+                                for (int ti=t;ti<t+ntime;ti++) for (int c=0;c<2*nc;c++) {
+                                    //patch[dx+ngbx*dy+ngbx*ngby*dz][ti-t+c*ntime] = magnitude[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][ti];
+                                    patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti-t+c*ntime] = images[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][ti];
+                                }
+                            }
+                        }
+                        // mean over samples
+                        double[] mean = new double[ntime*2*nc];
+                        for (int i=0;i<ntime*2*nc;i++) {
+                           for (int n=0;n<ngb3;n++) mean[i] += patch[n][i];
+                           mean[i] /= (double)ngb3;
+                           for (int n=0;n<ngb3;n++) patch[n][i] -= mean[i];
+                        }
+                        // PCA from SVD X = USVt
+                        //System.out.println("perform SVD");
+                        Matrix M = new Matrix(patch);
+                        SingularValueDecomposition svd = M.svd();
+                    
+                        // estimate noise
+                        // simple version: compute the standard deviation of the patch
+                        double sigma = 0.0;
+                        for (int n=0;n<ngb3;n++) for (int i=0;i<ntime*2*nc;i++) {
+                            sigma += patch[n][i]*patch[n][i];
+                        }
+                        sigma /= ntime*2*nc*ngb3;
+                        sigma = FastMath.sqrt(sigma);
+                        
+                        // cutoff
+                        //System.out.println("eigenvalues: ");
+                        double[] eig = new double[ntime*2*nc];
+                        boolean[] used = new boolean[ntime*2*nc];
+                        int nzero=0;
+                        double eigsum = 0.0;
+                        for (int n=0;n<ntime*2*nc;n++) {
+                            eig[n] = svd.getSingularValues()[n];
+                            eigsum += Numerics.abs(eig[n]);
+                        }
+                        // fit second half linear decay model
+                        int nfit = Numerics.floor(ntime*2*nc/2.0f);
+                        double[] loc = new double[nfit];
+                        double[][] fit = new double[nfit][1];
+                        for (int n=ntime*2*nc-nfit;n<ntime*2*nc;n++) {
+                            loc[n-ntime*2*nc+nfit] = (n-ntime*2*nc+nfit)/(double)nfit;
+                            fit[n-ntime*2*nc+nfit][0] = Numerics.abs(eig[n]);
+                        }
+                        double[][] poly = new double[nfit][2];
+                        for (int n=0;n<nfit;n++) {
+                            poly[n][0] = 1.0;
+                            poly[n][1] = loc[n];
+                        }
+                        // invert the linear model
+                        Matrix mtx = new Matrix(poly);
+                        Matrix smp = new Matrix(fit);
+                        Matrix val = mtx.solve(smp);
+                
+                        // compute the expected value:
+                        double[] expected = new double[ntime*2*nc];
+                        for (int n=0;n<ntime*2*nc;n++) {
+                            double n0 = (n-ntime*2*nc+nfit)/(double)nfit;
+                            // linear coeffs,
+                            expected[n] = (val.get(0,0) + n0*val.get(1,0));
+                            //expected[n] = n*slope + intercept;
+                        }
+                        double residual = 0.0;
+                        double meaneig = 0.0;
+                        double variance = 0.0;
+                        for (int n=nfit;n<ntime*2*nc;n++) meaneig += Numerics.abs(eig[n]);
+                        meaneig /= (ntime*2*nc-nfit);
+                        for (int n=nfit;n<ntime*2*nc;n++) {
+                            variance += (meaneig-Numerics.abs(eig[n]))*(meaneig-Numerics.abs(eig[n]));
+                            residual += (expected[n]-Numerics.abs(eig[n]))*(expected[n]-Numerics.abs(eig[n]));
+                        }
+                        double rsquare = 1.0;
+                        if (variance>0) rsquare = Numerics.max(1.0 - (residual/variance), 0.0);
+                         
+                        for (int n=0;n<ntime*2*nc;n++) {
+                            //System.out.print(" "+(eig[n]/sigma));
+                            if (n>=minDimension && Numerics.abs(eig[n]) < stdevCutoff*expected[n]) {
+                                used[n] = false;
+                                nzero++;
+                                //System.out.print("(-),");
+                            } else  if (maxDimension>0 && n>=maxDimension) {
+                                used[n] = false;
+                                nzero++;
+                                //System.out.print("(|),");
+                            } else {
+                                used[n] = true;
+                                //System.out.print("(+),");
+                            }
+                        }
+                        // reconstruct
+                        Matrix U = svd.getU();
+                        Matrix V = svd.getV();
+                        for (int n=0;n<ngb3;n++) for (int i=0;i<ntime*2*nc;i++) {
+                            // Sum_s>0 s_kU_kV_kt
+                            patch[n][i] = mean[i];
+                            for (int j=0;j<ntime*2*nc;j++) if (used[j]) {
+                                patch[n][i] += U.get(n,j)*eig[j]*V.get(i,j);
+                            }
+                        }
+                        // add to the denoised image
+                        double wpatch = (1.0/(1.0 + ntime*2*nc - nzero));
+                        for (int dx=0;dx<ngbx;dx++) for (int dy=0;dy<ngby;dy++) for (int dz=0;dz<ngbz;dz++) {
+                            if (mask[x+dx+nx*(y+dy)+nx*ny*(z+dz)]) {
+                                for (int ti=0;ti<ntime;ti++) {
+                                    for (int c=0;c<2*nc;c++) {
+                                        denoised[c][index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*patch[patchid[dx+ngbx*dy+ngbx*ngby*dz]][ti+c*ntime]);
+                                        //denoised[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*patch[dx+ngbx*dy+ngbx*ngby*dz][ti+c*ntime]);
+                                        //eigval[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*eig[i]);
+                                        //eigvec[t+i][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*U.get(dx+ngbx*dy+ngbx*ngby*dz,i));
+                                        //weights[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)wpatch;
+                                        //pcadim[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*(ntime-nzero));
+                                        //errmap[c][x+dx+nx*(y+dy)+nx*ny*(z+dz)][t+ti] += (float)(wpatch*rsquare);
+                                    }
+                                    weights[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)wpatch;
+                                    pcadim[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*(ntime*2*nc-nzero));
+                                    errmap[index[x+dx+nx*(y+dy)+nx*ny*(z+dz)]][t+ti] += (float)(wpatch*rsquare);
+                                }
+                                //weights[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)wpatch;
+                                //pcadim[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*(ntime-nzero));
+                                //errmap[(t+i)/tstep][x+dx+nx*(y+dy)+nx*ny*(z+dz)] += (float)(wpatch*rsquare);
+                            }
+                        }
+                    }
+                }
+                if (last) t=nt;
+            }
+        }
+        images = null;
+        
+        for (int ind=0;ind<nmask;ind++) {
+            double err = 0.0;
+            for (int t=0;t<nt;t++) {
+                for (int c=0;c<2*nc;c++) {
+                    denoised[c][ind][t] /= weights[ind][t];
+                    //eigval[i][xyz] /= weights[i][xyz];
+                    //eigvec[i][xyz] /= weights[i][xyz];
+                    //pcadim[c][xyz][t] /= weights[c][xyz][t];
+                    //errmap[c][xyz][t] /= weights[c][xyz][t];
+                }
+                pcadim[ind][t] /= weights[ind][t];
+                errmap[ind][t] /= weights[ind][t];
+            }
+        }
+        weights = null;
+        
+        globalpcadim = new float[nt*nxyz];
+        globalerrmap = new float[nxyz];
+        for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+            globalerrmap[xyz] = 1.0f;
+            for (int t=0;t<nt;t++) {
+                globalpcadim[xyz+t*nxyz] = pcadim[index[xyz]][t];
+                globalerrmap[xyz] = Numerics.min(globalerrmap[xyz], errmap[index[xyz]][t]);
+            }
+        }
+        // rebuild magnitude and phase images
+        magnitude = new float[nc][nmask][nt];
+        phase = new float[nc][nmask][nt];
+  		for (int c=0;c<nc;c++) {
+  		    for (int t=0;t<nt;t++) {
+                for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                    magnitude[c][index[xyz]][t] = (float)FastMath.sqrt(denoised[2*c+0][index[xyz]][t]*denoised[2*c+0][index[xyz]][t]+denoised[2*c+1][index[xyz]][t]*denoised[2*c+1][index[xyz]][t]);
+                    //invphs[i][xyz] = (float)(FastMath.atan2(denoised[2*i+1][xyz],denoised[2*i][xyz])*phsscale[i]);
+                    phase[c][index[xyz]][t] = (float)FastMath.atan2(denoised[2*c+1][index[xyz]][t],denoised[2*c+0][index[xyz]][t]);
+                 }
+            }
+        }
+        // opt. add back the TV estimate
+        for (int c=0;c<nc;c++) for (int t=0;t<nt;t++) for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+            phase[c][index[xyz]][t] += tvphs[c][index[xyz]][t];
+            // wrap around phase values and rescale to original values
+            phase[c][index[xyz]][t] = (float)(Numerics.modulo(phase[c][index[xyz]][t], 2.0*FastMath.PI)*phsscale);
+        }
+        
+  		return;
+	}
+	
 }

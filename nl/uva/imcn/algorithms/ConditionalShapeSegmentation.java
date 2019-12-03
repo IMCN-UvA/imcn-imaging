@@ -32,25 +32,32 @@ public class ConditionalShapeSegmentation {
 	private int nc;
 	private int nbest = 16;
 	
-	private float deltaIn = 2.0f;
+	private float deltaIn = 1.0f; // this parameter might have a big effect
 	private float deltaOut = 0.0f;
-	private float boundary = 10.0f;
+	private float boundary = 10.0f; // tricky: it should be large enough not to crop enlarged structures
+	// these have been tested: could be hard-coded
 	private boolean modelBackground = true;
-	private boolean cancelBackground = true;
+	private boolean cancelBackground = false;
 	private boolean cancelAll = false;
 	private boolean sumPosterior = false;
-	private boolean maxPosterior = false;
-	private int maxiter = 0;
-	private float maxdiff = 0.01f;
+	private boolean maxPosterior = true;
+	private int maxiter = 100;
+	private float maxdiff = 0.1f;
 	//private boolean topoParam = true;
 	//private     String	            lutdir = null;
+	// these have been tested: could be hard-coded
 	private double top = 95.0;
 	private boolean rescaleProbas = true;
 	private boolean rescaleIntensities = true;
 	private boolean modelHistogram = true;
 	private boolean rescaleHistograms = true;
 	
+	// more things to tune? small & variable structures seem to vanish a bit fast
+	private boolean scalePriors = true;
+	
 	private final float INF = 1e9f;
+	
+	private final int connectivity = 26;
 	
 	// possibly to extend to entire distribution?
 	// model size: nbins x nc x nobj x nobj
@@ -73,6 +80,9 @@ public class ConditionalShapeSegmentation {
 	private int[][]        combinedLabels;
 	private float[][]      combinedProbas;
 	
+	private int[][]        jointLabels;
+	private float[][]      jointProbas;
+	
 	private int[][]        diffusedLabels;
 	private float[][]      diffusedProbas;
 	
@@ -82,8 +92,15 @@ public class ConditionalShapeSegmentation {
 	private float[][]      ngbw;
 	private int[]          idmap;
 	
-	private float[]        objVolumeMean;
-	private float[]        objVolumeStdv;
+	private float[]        logVolMean;
+	private float[]        logVolStdv;
+	
+	private float[][]        logVolMean2;
+	private float[][]        logVolStdv2;
+
+	private double[]        boundaryDev;
+	private double[]        objAvg;
+	private double[]        objDev;
 	
 	private int nx, ny, nz, nxyz;
 	private float rx, ry, rz;
@@ -226,10 +243,72 @@ public class ConditionalShapeSegmentation {
             System.out.print("volume ratios: ");
             for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(mappedVol[obj]/atlasVol[obj])+", ");
             System.out.println("(m/a)");
-            // adjust the volume priors
             for (int obj=0;obj<nobj;obj++) {
-                objVolumeMean[obj] *= mappedVol[obj]/atlasVol[obj];
-                objVolumeStdv[obj] *= mappedVol[obj]/atlasVol[obj];
+                //objVolumeMean[obj] *= mappedVol[obj]/atlasVol[obj];
+                //objVolumeStdv[obj] *= mappedVol[obj]/atlasVol[obj];
+                logVolMean[obj] += FastMath.log(mappedVol[obj]) - FastMath.log(atlasVol[obj]);
+                // only applies to the mean, the variance is not affected (additive factor in log space)
+                //logVolStdv[obj] += FastMath.log(mappedVol[obj]) - FastMath.log(atlasVol[obj]);
+            }
+            
+            // adjust the volume boudnary priors too...
+            int[] atlasBoundaryLabels = atlasBoundaryLabels(pval, lval);
+            float[][] atlasVol2 = new float[nobj][nobj];
+            for (int xyz=0;xyz<naxyz;xyz++) if (atlasBoundaryLabels[xyz]>0) {
+                int obj1 = Numerics.floor(atlasBoundaryLabels[xyz]/100)-1;
+                int obj2 = atlasBoundaryLabels[xyz] - 100*(obj1+1) - 1;
+                
+                atlasVol2[obj1][obj2] += rax*ray*raz;
+            }
+            /*
+            System.out.print("atlas boudnary volumes: ");
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) 
+                System.out.print(obj1+" | "+obj2+" : "+(atlasVol2[obj1][obj2])+", ");
+            System.out.println("(a)");
+            */
+            float[][] mappedVol2 = new float[nobj][nobj];
+            for (int xt=0;xt<ntx;xt++) for (int yt=0;yt<nty;yt++) for (int zt=0;zt<ntz;zt++) {
+                int idx = xt + ntx*yt + ntx*nty*zt;
+                if (mask[idx]) {
+                    int xa = Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nax-1);
+                    int ya = Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,nay-1);
+                    int za = Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,naz-1);
+                    //int xyz =       Numerics.bounded(Numerics.round(map2target[idx+0*ntxyz]),0,nx-1)
+                    //        +    nx*Numerics.bounded(Numerics.round(map2target[idx+1*ntxyz]),0,ny-1)
+                    //        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+                    int xyz = xa + nax*ya + nax*nay*za;
+
+                    if (atlasBoundaryLabels[xyz]>0) {
+                        int obj1 = Numerics.floor(atlasBoundaryLabels[xyz]/100)-1;
+                        int obj2 = atlasBoundaryLabels[xyz] - 100*(obj1+1) - 1;
+                        
+                        mappedVol2[obj1][obj2] += rtx*rty*rtz;
+                    }
+                }
+            }
+            /*
+            System.out.print("mapped volumes: ");
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) 
+                System.out.print(obj1+" | "+obj2+" : "+(mappedVol2[obj1][obj2])+", ");
+            System.out.println("(m)");
+            
+            System.out.print("volume ratios: ");
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                if (mappedVol2[obj1][obj2]>0 && atlasVol2[obj1][obj2]>0) {
+                    System.out.print(obj1+" | "+obj2+" : "+(mappedVol2[obj1][obj2]/atlasVol2[obj1][obj2])+", ");
+                } else {
+                    System.out.print(obj1+" | "+obj2+" : n/a, ");
+                }
+            }
+            System.out.println("(m/a)");
+            */
+            // adjust the volume priors
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                //objVolumeMean[obj] *= mappedVol[obj]/atlasVol[obj];
+                //objVolumeStdv[obj] *= mappedVol[obj]/atlasVol[obj];
+                logVolMean2[obj1][obj2] += FastMath.log(Numerics.max(1.0,mappedVol2[obj1][obj2])) - FastMath.log(Numerics.max(1.0,atlasVol2[obj1][obj2]));
+                // only applies to the mean, the variance is not affected (additive factor in log space)
+                //logVolStdv2[obj1][obj2] += FastMath.log(Numerics.max(1.0,mappedVol2[obj1][obj2])) - FastMath.log(Numerics.max(1.0,atlasVol2[obj1][obj2]));
             }
             // reset all indices to subject space
             nx = ntx; ny = nty; nz = ntz; nxyz = ntxyz;
@@ -285,20 +364,24 @@ public class ConditionalShapeSegmentation {
 	    condmin = new double[nc][nobj][nobj];
 	    condmax = new double[nc][nobj][nobj];
 		condpair = new boolean[nc][nobj][nobj];
-		objVolumeMean = new float[nobj];
-		objVolumeStdv = new float[nobj];
+		logVolMean = new float[nobj];
+		logVolStdv = new float[nobj];
+	    logVolMean2 = new float[nobj][nobj];
+		logVolStdv2 = new float[nobj][nobj];
 	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
 	        condpair[c][obj1][obj2] = false;
-	        condmin[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*0+nobj*nobj*(nbins+4)*c];
+	        condmin[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*0+nobj*nobj*(nbins+6)*c];
 	        for (int bin=0;bin<nbins;bin++) {
-	            condhistogram[c][obj1][obj2][bin] = val[obj2+obj1*nobj+nobj*nobj*(bin+1)+nobj*nobj*(nbins+4)*c];
+	            condhistogram[c][obj1][obj2][bin] = val[obj2+obj1*nobj+nobj*nobj*(bin+1)+nobj*nobj*(nbins+6)*c];
 	            if (condhistogram[c][obj1][obj2][bin]>0) condpair[c][obj1][obj2] = true;
 	        }
-	        condmax[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*(nbins+1)+nobj*nobj*(nbins+4)*c];
+	        condmax[c][obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*(nbins+1)+nobj*nobj*(nbins+6)*c];
 	        if (obj1==obj2) {
-	            objVolumeMean[obj1] = val[obj2+obj1*nobj+nobj*nobj*(nbins+2)+nobj*nobj*(nbins+4)*c];
-	            objVolumeStdv[obj1] = val[obj2+obj1*nobj+nobj*nobj*(nbins+3)+nobj*nobj*(nbins+4)*c];
+	            logVolMean[obj1] = val[obj2+obj1*nobj+nobj*nobj*(nbins+2)+nobj*nobj*(nbins+6)*c];
+	            logVolStdv[obj1] = val[obj2+obj1*nobj+nobj*nobj*(nbins+3)+nobj*nobj*(nbins+6)*c];
 	        }
+            logVolMean2[obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*(nbins+4)+nobj*nobj*(nbins+6)*c];
+            logVolStdv2[obj1][obj2] = val[obj2+obj1*nobj+nobj*nobj*(nbins+5)+nobj*nobj*(nbins+6)*c];
 	    }
 	}
 	
@@ -415,6 +498,27 @@ public class ConditionalShapeSegmentation {
         return images;
 	}
 	
+    public final float[] getJointProbabilityMaps(int nval) { 
+        nval = Numerics.min(nval,nbest);
+        float[] images = new float[nval*nxyz];
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int best=0;best<nval;best++) {
+                images[xyz+best*nxyz] = jointProbas[best][idmap[xyz]];
+            }
+        }
+        return images;
+	}
+	public final int[] getJointProbabilityLabels(int nval) { 
+        nval = Numerics.min(nval,nbest);
+        int[] images = new int[nval*nxyz];
+		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+		    for (int best=0;best<nval;best++) {
+                images[xyz+best*nxyz] = jointLabels[best][idmap[xyz]];
+            }
+        }
+        return images;
+	}
+	
 	public final float[] getCertaintyProbability() { 
         float[] images = new float[nxyz];
 		for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
@@ -452,17 +556,19 @@ public class ConditionalShapeSegmentation {
 	}
 	
 	public final float[] getConditionalHistogram() {
-	    float[] val = new float[nc*nobj*nobj*(nbins+4)];
+	    float[] val = new float[nc*nobj*nobj*(nbins+6)];
 	    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) for (int c=0;c<nc;c++) {
-	        val[obj2+obj1*nobj+0*nobj*nobj+c*nobj*nobj*(nbins+4)] = (float)condmin[c][obj1][obj2];
+	        val[obj2+obj1*nobj+0*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)condmin[c][obj1][obj2];
 	        for (int bin=0;bin<nbins;bin++) {
-	            val[obj2+obj1*nobj+(bin+1)*nobj*nobj+c*nobj*nobj*(nbins+4)] = (float)condhistogram[c][obj1][obj2][bin];
+	            val[obj2+obj1*nobj+(bin+1)*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)condhistogram[c][obj1][obj2][bin];
 	        }
-	        val[obj2+obj1*nobj+(nbins+1)*nobj*nobj+c*nobj*nobj*(nbins+4)] = (float)condmax[c][obj1][obj2];
+	        val[obj2+obj1*nobj+(nbins+1)*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)condmax[c][obj1][obj2];
 	        if (obj1==obj2) {
-	            val[obj2+obj1*nobj+(nbins+2)*nobj*nobj+c*nobj*nobj*(nbins+4)] = (float)objVolumeMean[obj1];
-	            val[obj2+obj1*nobj+(nbins+3)*nobj*nobj+c*nobj*nobj*(nbins+4)] = (float)objVolumeStdv[obj1];
+	            val[obj2+obj1*nobj+(nbins+2)*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)logVolMean[obj1];
+	            val[obj2+obj1*nobj+(nbins+3)*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)logVolStdv[obj1];
 	        }
+            val[obj2+obj1*nobj+(nbins+4)*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)logVolMean2[obj1][obj2];
+            val[obj2+obj1*nobj+(nbins+5)*nobj*nobj+c*nobj*nobj*(nbins+6)] = (float)logVolStdv2[obj1][obj2];
 	    }
 	    return val;
 	}
@@ -583,7 +689,12 @@ public class ConditionalShapeSegmentation {
                 
                 double sigma2 = var+Numerics.max(deltaOut, deltaIn, 1.0);
                 sigma2 *= sigma2;
-                priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
+                // when scaling by the variance, it penalizes more strongly variable regions -> they get a weaker prior
+                // maybe a good thing? not entirely sure...
+                if (scalePriors)
+                    priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
+                else
+                    priors[obj1][obj2] = FastMath.exp( -0.5*mean*mean/sigma2 );
  			}
             for (int best=0;best<nbest;best++) {
                 int best1=0;
@@ -879,8 +990,9 @@ public class ConditionalShapeSegmentation {
             }
         }
         // compute volume mean, stdv of each structure
-        objVolumeMean = new float[nobj];
-        objVolumeStdv = new float[nobj];
+        System.out.println("Volume statistics");
+        logVolMean = new float[nobj];
+        logVolStdv = new float[nobj];
         for (int obj=0;obj<nobj;obj++) {
             float[] vols = new float[nsub];
             for (int sub=0;sub<nsub;sub++) {
@@ -890,490 +1002,59 @@ public class ConditionalShapeSegmentation {
                         vols[sub]+=rx*ry*rz;
                     }
                 }
-                objVolumeMean[obj] += vols[sub]/nsub;
+                logVolMean[obj] += FastMath.log(Numerics.max(1.0,vols[sub]))/nsub;
             }
             for (int sub=0;sub<nsub;sub++) {
-                objVolumeStdv[obj] += Numerics.square(vols[sub]-objVolumeMean[obj])/(nsub-1.0f);
+                logVolStdv[obj] += Numerics.square(FastMath.log(Numerics.max(1.0,vols[sub]))-logVolMean[obj])/(nsub-1.0f);
             }
-            objVolumeStdv[obj] = (float)FastMath.sqrt(objVolumeStdv[obj]);
+            logVolStdv[obj] = (float)FastMath.sqrt(logVolStdv[obj]);
+            System.out.println(obj+" : "+FastMath.exp(logVolMean[obj])
+                                   +" ["+FastMath.exp(logVolMean[obj]-logVolStdv[obj])
+                                   +", "+FastMath.exp(logVolMean[obj]+logVolStdv[obj]));
         }        
-        
-		// at this point the atlas data is not used anymore
-		levelsets = null;
-		contrasts = null;
-		System.out.println("\ndone");
-	}
-
-	public final void computeMappedAtlasPriors() {
-	    nx = nax; ny = nay; nz = naz; nxyz = naxyz;
-	    rx = rax; ry = ray; rz = raz;
-	    
-	    float[][][] levelsets = null; 
-	    
-	    // not correct: explicitly build the levelset of the background first, then crop it
-	    if (modelBackground) {
-            // adding the background: building a ring around the structures of interest
-            // with also a sharp decay to the boundary
-            levelsets = new float[nsub][nobj][];
-            float[] background = new float[ntxyz];
-            boolean[] bgmask = new boolean[ntxyz];
-            for (int xyz=0;xyz<ntxyz;xyz++) bgmask[xyz] = true;
-            boundary = boundary/Numerics.max(rtx,rty,rtz);
-            
-            for (int sub=0;sub<nsub;sub++) {
-                for (int xyz=0;xyz<ntxyz;xyz++) {
-                    float mindist = boundary;
-                    for (int obj=0;obj<nobj-1;obj++) {
-                        if (lvlImages[sub][obj][xyz]<mindist) mindist = lvlImages[sub][obj][xyz];
-                    }
-                    if (mindist<boundary) {
-                        background[xyz] = -mindist;
-                    } else {
-                        background[xyz] = mindist;
-                    }
-                }
-                InflateGdm gdm = new InflateGdm(background, ntx, nty, ntz, rtx, rty, rtz, bgmask, 0.4f, 0.4f, "no", null);
-                gdm.evolveNarrowBand(0, 1.0f);
-                levelsets[sub][0] = gdm.getLevelSet();
-                for (int obj=1;obj<nobj;obj++) {
-                    levelsets[sub][obj] = lvlImages[sub][obj-1];
-                }
-            }
-            //nobj = nobj+1;
-        } else {
-            levelsets = lvlImages;
-		}
-		/* if not compensating for the rescaling
-        // compute volume mean, stdv of each structure in subject space?
-        objVolumeMean = new float[nobj];
-        objVolumeStdv = new float[nobj];
-        for (int obj=0;obj<nobj;obj++) {
-            float[] vols = new float[nsub];
-            for (int sub=0;sub<nsub;sub++) {
-                vols[sub] = 0.0f;
-                for (int xyz=0;xyz<ntxyz;xyz++) {
-                    if (levelsets[sub][obj][xyz]<0) {
-                        vols[sub]+=rtx*rty*rtz;
-                    }
-                }
-                objVolumeMean[obj] += vols[sub]/nsub;
-            }
-            for (int sub=0;sub<nsub;sub++) {
-                objVolumeStdv[obj] += Numerics.square(vols[sub]-objVolumeMean[obj])/(nsub-1.0f);
-            }
-            objVolumeStdv[obj] = (float)FastMath.sqrt(objVolumeStdv[obj]);
-        }
-        */
-       
-		// mask anything too far outside the structures of interest in atlas space
-		mask = new boolean[naxyz];
-		ndata = 0;
-		for (int xyz=0;xyz<naxyz;xyz++) {
-		    float mindist = boundary;
-            for (int sub=0;sub<nsub;sub++) {
-                int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                        + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                        + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-                for (int obj=0;obj<nobj;obj++) {
-                    if (levelsets[sub][obj][idx]<mindist) mindist = levelsets[sub][obj][idx];
-                }
-            }
-            if (mindist<boundary) {
-                mask[xyz] = true;
-                ndata++;
-            } else {
-                mask[xyz] = false;
-            }
-        }
-        // build ID map
-        idmap = new int[naxyz];
-        int id = 0;
-        for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-            idmap[xyz] = id;
-            id++;
-        }
-        System.out.println("masking: work region "+ndata+", compression: "+(ndata/(float)naxyz));
-		
-       // adapt number of kept values?
-        
-		System.out.println("compute joint conditional shape priors");
-		spatialProbas = new float[nbest][ndata]; 
-		spatialLabels = new int[nbest][ndata];
-		
-		int ctr = Numerics.floor(nsub/2);
-        int dev = Numerics.floor(nsub/4);
-                    
-		double[] val = new double[nsub];
-		//double iqrsum=0, iqrden=0;
-		double stdsum=0, stdden=0;
-		for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-		    double[][] priors = new double[nobj][nobj];
-            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                //priors[obj1][obj2] = FastMath.exp( -0.5*med*med/(1.349*iqr*1.349*iqr) );
-                // alternative idea: use a combination of mean and stdev as distance basis
-                // -> take into account uncertainty better
-                double mean = 0.0;
-                for (int sub=0;sub<nsub;sub++) {
-                    int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                            + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                            + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-                    mean += Numerics.max(0.0, levelsets[sub][obj1][idx]-deltaOut, levelsets[sub][obj2][idx]-deltaIn);
-                }
-                mean /= nsub;
-                double var = 0.0;
-                for (int sub=0;sub<nsub;sub++) {
-                    int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                            + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                            + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-                    var += Numerics.square(mean-Numerics.max(0.0, levelsets[sub][obj1][idx]-deltaOut, levelsets[sub][obj2][idx]-deltaIn));
-                }
-                var = FastMath.sqrt(var/nsub);
-                
-                stdsum += var;
-                stdden ++;
-                
-                double sigma2 = var+Numerics.max(deltaOut, deltaIn, 1.0);
-                sigma2 *= sigma2;
-                priors[obj1][obj2] = 1.0/FastMath.sqrt(2.0*FastMath.PI*sigma2)*FastMath.exp( -0.5*mean*mean/sigma2 );
- 			}
-            for (int best=0;best<nbest;best++) {
-                int best1=0;
-				int best2=0;
-					
+        // same for all interfaces
+        System.out.println("Conditional volume statistics");
+        logVolMean2 = new float[nobj][nobj];
+        logVolStdv2 = new float[nobj][nobj];
+        float[][][] vols = new float[nsub][nobj][nobj];
+        for (int sub=0;sub<nsub;sub++) {
+            for (int xyz=0;xyz<nxyz;xyz++) if (mask[xyz]) {
+                double best = INF;
+                int best1 = -1;
+                int best2 = -1;
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                    if (priors[obj1][obj2]>priors[best1][best2]) {
-						best1 = obj1;
-						best2 = obj2;
-					}
-				}
-				// check if best is zero: give null label in that case
-				if (priors[best1][best2]>0) {
-                    // sub optimal labeling, but easy to read
-                    spatialLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
-                    spatialProbas[best][idmap[xyz]] = (float)priors[best1][best2];
-                } else {
-                    for (int b=best;b<nbest;b++) {
-                        spatialLabels[b][idmap[xyz]] = 0;
-                        spatialProbas[b][idmap[xyz]] = 0.0f;
+                    if (Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn)<best) {
+                        best = Numerics.max(0.0, levelsets[sub][obj1][xyz]-deltaOut, levelsets[sub][obj2][xyz]-deltaIn);
+                        best1 = obj1;
+                        best2 = obj2;
                     }
-                    best = nbest;
-                }                    
-                // remove best value
-                priors[best1][best2] = 0.0;
- 		    }
-		}
-		//System.out.println("mean spatial iqr: "+(iqrsum/iqrden));
-		System.out.println("mean spatial stdev: "+(stdsum/stdden));
-		// levelsets are now discarded...
-		// not yet! 
-		//levelsets = null;
-		
-		// rescale top % in each shape and intensity priors
-		if (rescaleProbas){
-            Percentile measure = new Percentile();
-            val = new double[ndata];
-            for (id=0;id<ndata;id++) val[id] = spatialProbas[0][id];
-            float shapeMax = (float)measure.evaluate(val, top);
-            System.out.println("top "+top+"% shape probability: "+shapeMax);
-            for (id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
-                spatialProbas[best][id] = (float)Numerics.min(top/100.0*spatialProbas[best][id]/shapeMax, 1.0f);
-            }		
-		}
-		
-		System.out.println("compute joint conditional intensity priors");
-		
-		float[][][] contrasts = intensImages;
-		float[][] medc = new float[nc][ndata];
-		float[][] iqrc = new float[nc][ndata];
-		
-		System.out.println("1. estimate subjects distribution");
-		double[] cntsum = new double[nc];
-		double[] cntden = new double[nc];
-		val = new double[nsub];
-		for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-		    for (int c=0;c<nc;c++) {
-                for  (int sub=0;sub<nsub;sub++) {
-                    int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                            + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                            + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-
-                    val[sub] = contrasts[sub][c][idx];
                 }
-                /*
-                //System.out.println("values");
-                Percentile measure = new Percentile();
-                measure.setData(val);
-			
-                medc[c][idmap[xyz]] = (float)measure.evaluate(50.0); 
-                //System.out.println("median "+medc[c][idmap[xyz]]);
-                iqrc[c][idmap[xyz]] = (float)(measure.evaluate(75.0) - measure.evaluate(25.0));
-                //System.out.println("iqr "+iqrc[c][idmap[xyz]]);
-                */
-                Numerics.sort(val);
-                double med, iqr;
-                if (nsub%2==0) {
-                    med = 0.5*(val[ctr-1]+val[ctr]);
-                    iqr = val[ctr+dev] - val[ctr-1-dev];
-                } else {
-                    med = val[ctr];
-                    iqr = val[ctr+dev] - val[ctr-dev];
-                }                   
-                medc[c][idmap[xyz]] = (float)med;
-                iqrc[c][idmap[xyz]] = (float)iqr;
-                
-                cntsum[c] += iqr;
-                cntden[c]++;
+                vols[sub][best1][best2]+=rx*ry*rz;
             }
-        }
-        for (int c=0;c<nc;c++) {
-            System.out.println("mean iqr (contrast "+c+"): "+(cntsum[c]/cntden[c]));
-		}
-		
-		System.out.println("2. compute conditional maps");
-		
-		condpair = new boolean[nc][nobj][nobj];
-		if (modelHistogram) {
-		    System.out.println("(use histograms for intensities)");
-		    condmin = new double[nc][nobj][nobj];
-		    condmax = new double[nc][nobj][nobj];
-		    condhistogram = new double[nc][nobj][nobj][nbins];
-		    
-		    // min, max: percentile on median (to avoid spreading the values to outliers)
-		    // same min, max for all object pairs => needed for fair comparison 
-		    // (or normalize by volume, i.e. taking width into account
-		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-		        System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
-                for (int c=0;c<nc;c++) {
-                    condmin[c][obj1][obj2] = 1e9f;
-                    condmax[c][obj1][obj2] = -1e9f;
-                }
-                for (int c=0;c<nc;c++) {
-                    boolean existsPair = false;
-                    // use median intensities to estimate [min,max]
-                    for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-                        double med = medc[c][idmap[xyz]];
-                        double iqr = iqrc[c][idmap[xyz]];
-                        // assuming here that iqr==0 means masked regions
-                        if (iqr>0) { 
-                            // look only among non-zero priors for each region
-                            for (int best=0;best<nbest;best++) {
-                                if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
-                                    // found value: proceeed
-                                    if (med<condmin[c][obj1][obj2]) condmin[c][obj1][obj2] = med;
-                                    if (med>condmax[c][obj1][obj2]) condmax[c][obj1][obj2] = med;
-                                    if (condmin[c][obj1][obj2]!=condmax[c][obj1][obj2]) existsPair = true;
-                                }
-                            }
-                        }
-                    }
-                    if (existsPair) {
-                        condpair[c][obj1][obj2] = true;
-                        System.out.print("["+condmin[c][obj1][obj2]+" , "+condmax[c][obj1][obj2]+"]    ");
-                    } else {
-                        condmin[c][obj1][obj2] = 0;
-                        condmax[c][obj1][obj2] = 0;
-                        condpair[c][obj1][obj2] = false;
-                        System.out.print("empty pair    ");
-                    }
-                }
-            }
-            // take the global min,max to make histograms comparable
-		    for (int c=0;c<nc;c++) {
-		        double cmin = condmin[c][0][0];
-		        double cmax = condmax[c][0][0];
-		        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                    if (condpair[c][obj1][obj2]) {
-                        if (condmin[c][obj1][obj2]<cmin) cmin = condmin[c][obj1][obj2];
-                        if (condmax[c][obj1][obj2]>cmax) cmax = condmax[c][obj1][obj2];
-                    }
-                }
-		        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-		            condmin[c][obj1][obj2] = cmin;
-		            condmax[c][obj1][obj2] = cmax;
-		        }
-		    }
-		    for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-		        for (int c=0;c<nc;c++) {
-		            if (condpair[c][obj1][obj2]) {
-                        for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-                            double med = medc[c][idmap[xyz]];
-                            double iqr = iqrc[c][idmap[xyz]];
-                            // assuming here that iqr==0 means masked regions
-                            if (iqr>0) { 
-                                // look for non-zero priors
-                                for (int best=0;best<nbest;best++) {
-                                    if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
-                                        // found value: proceeed
-                                        for (int sub=0;sub<nsub;sub++) {
-                                            int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                                                    + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                                                    + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-
-                                            // adds uncertainties from mismatch between subject intensities and mean shape
-                                            /*
-                                            double psub = spatialProbas[best][idmap[xyz]]*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                               *FastMath.exp( -0.5*(contrasts[sub][c][xyz]-med)*(contrasts[sub][c][xyz]-med)/(1.349*iqr*1.349*iqr) );
-                                            */
-                                            double ldist = Numerics.max(levelsets[sub][obj1][idx]-deltaOut, levelsets[sub][obj2][idx]-deltaIn, 0.0);
-                                            double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
-                                            double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
-                                            double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                               *FastMath.exp( -0.5*(contrasts[sub][c][idx]-med)*(contrasts[sub][c][idx]-med)/(1.349*iqr*1.349*iqr) );
-                                            // add to the mean
-                                            int bin = Numerics.bounded(Numerics.ceil( (contrasts[sub][c][idx]-condmin[c][obj1][obj2])/(condmax[c][obj1][obj2]-condmin[c][obj1][obj2])*nbins)-1, 0, nbins-1);
-                                            condhistogram[c][obj1][obj2][bin] += psub;
-                                        }
-                                        best=nbest;
-                                    }
-                                }
-                            }
-                        }
-                        // smooth histograms to avoid sharp edge effects
-                        double var = 1.0*1.0;
-                        double[] tmphist = new double[nbins];
-                        for (int bin1=0;bin1<nbins;bin1++) {
-                            for (int bin2=0;bin2<nbins;bin2++) {
-                                tmphist[bin1] += condhistogram[c][obj1][obj2][bin2]*FastMath.exp(-0.5*(bin1-bin2)*(bin1-bin2)/var);
-                            }
-                        }
-                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] = tmphist[bin];
-                        
-                        // normalize: sum over count x spread = 1
-                        double sum = 0.0;
-                        for (int bin=0;bin<nbins;bin++) sum += condhistogram[c][obj1][obj2][bin];   
-                        //for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] /= sum*(condmax[c][obj1][obj2]-condmin[c][obj1][obj2]);   
-                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] /= sum;   
-                    } else {
-                        for (int bin=0;bin<nbins;bin++) condhistogram[c][obj1][obj2][bin] = 0;   
-                    }
-                }
-            }
-        } else {
-            // use spatial priors and subject variability priors to define conditional intensity
-            // mean and stdev
-            System.out.println("(use mean,stdev for intensities)");
-            condmean = new double[nc][nobj][nobj];
-            condstdv = new double[nc][nobj][nobj];
             for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                System.out.print("\n("+(obj1+1)+" | "+(obj2+1)+"): ");
-                for (int c=0;c<nc;c++) {
-                    // System.out.println("..mean");
-                    double sum = 0.0;
-                    double den = 0.0;
-                    for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-                        double med = medc[c][idmap[xyz]];
-                        double iqr = iqrc[c][idmap[xyz]];
-                        // assuming here that iqr==0 means masked regions
-                        if (iqr>0) { 
-                            // look for non-zero priors
-                            for (int best=0;best<nbest;best++) {
-                                if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
-                                    // found value: proceeed
-                                    for (int sub=0;sub<nsub;sub++) {
-                                        int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                                                + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                                                + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-                                        // adds uncertainties from mismatch between subject intensities and mean shape
-                                        double ldist = Numerics.max(levelsets[sub][obj1][idx]-deltaOut, levelsets[sub][obj2][idx]-deltaIn, 0.0);
-                                        double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
-                                        double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
-                                        double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                          *FastMath.exp( -0.5*(contrasts[sub][c][idx]-med)*(contrasts[sub][c][idx]-med)/(1.349*iqr*1.349*iqr) );
-                                        // add to the mean
-                                        sum += psub*contrasts[sub][c][idx];
-                                        den += psub;
-                                    }
-                                    best=nbest;
-                                }
-                            }
-                        }
-                    }
-                    // build average
-                    if (den>0) {
-                        condmean[c][obj1][obj2] = sum/den;
-                        condpair[c][obj1][obj2] = true;
-                    } else {
-                        System.out.print("empty pair        ");
-                        condmean[c][obj1][obj2] = 0.0;
-                        condpair[c][obj1][obj2] = false;
-                    }
-                    //System.out.println("..stdev");
-                    double var = 0.0;
-                    for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-                        double med = medc[c][idmap[xyz]];
-                        double iqr = iqrc[c][idmap[xyz]];
-                       // assuming here that iqr==0 means masked regions
-                        if (iqr>0) { 
-                            // look for non-zero priors
-                            for (int best=0;best<nbest;best++) {
-                                if (spatialLabels[best][idmap[xyz]]==100*(obj1+1)+(obj2+1)) {
-                                    // found value: proceeed
-                                    for (int sub=0;sub<nsub;sub++) {
-                                        int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                                                + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                                                + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-                                        // adds uncertainties from mismatch between subject intensities and mean shape
-                                        double ldist = Numerics.max(levelsets[sub][obj1][idx]-deltaOut, levelsets[sub][obj2][idx]-deltaIn, 0.0);
-                                        double ldelta = Numerics.max(deltaOut, deltaIn, 1.0);
-                                        double pshape = FastMath.exp(-0.5*(ldist*ldist)/(ldelta*ldelta));
-                                        double psub = pshape*1.0/FastMath.sqrt(2.0*FastMath.PI*1.349*iqr*1.349*iqr)
-                                                            *FastMath.exp( -0.5*(contrasts[sub][c][idx]-med)*(contrasts[sub][c][idx]-med)/(1.349*iqr*1.349*iqr) );
-                                        // add to the mean
-                                        var += psub*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2])*(contrasts[sub][c][xyz]-condmean[c][obj1][obj2]);
-                                    }
-                                    best=nbest;
-                                }
-                            }
-                        }
-                    }
-                    // build stdev
-                    if (var==0) {
-                       System.out.print("empty region        ");
-                       condstdv[c][obj1][obj2] = 0;
-                       condpair[c][obj1][obj2] = false;
-                    } else if (den>0) {
-                       condstdv[c][obj1][obj2] = FastMath.sqrt(var/den);
-                       System.out.print(condmean[c][obj1][obj2]+" +/- "+condstdv[c][obj1][obj2]+"    ");
-                       condpair[c][obj1][obj2] = true;
-                    } else {
-                       System.out.print("empty pair        ");
-                       condstdv[c][obj1][obj2] = 0;
-                       condpair[c][obj1][obj2] = false;
-                    } 
-                }
+                logVolMean2[obj1][obj2] += FastMath.log(Numerics.max(1.0,vols[sub][obj1][obj2]))/nsub;
             }
         }
-        /* if computing in atlas space */
-        // compute volume mean, stdv of each structure
-        objVolumeMean = new float[nobj];
-        objVolumeStdv = new float[nobj];
-        for (int obj=0;obj<nobj;obj++) {
-            float[] vols = new float[nsub];
-            for (int sub=0;sub<nsub;sub++) {
-                vols[sub] = 0.0f;
-                for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-                    int idx = Numerics.bounded(Numerics.round(mapImages[sub][xyz]),0,ntx-1)
-                            + ntx*Numerics.bounded(Numerics.round(mapImages[sub][xyz+naxyz]),0,nty-1)
-                            + ntx*nty*Numerics.bounded(Numerics.round(mapImages[sub][xyz+2*naxyz]),0,ntz-1);
-                    if (levelsets[sub][obj][idx]<0) {
-                        vols[sub]+=rax*ray*raz;
-                    }
-                }
-                objVolumeMean[obj] += vols[sub]/nsub;
+        for (int sub=0;sub<nsub;sub++) {
+            for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                logVolStdv2[obj1][obj2] += Numerics.square(FastMath.log(Numerics.max(1.0,vols[sub][obj1][obj2]))-logVolMean2[obj1][obj2])/(nsub-1.0f);
             }
-            for (int sub=0;sub<nsub;sub++) {
-                objVolumeStdv[obj] += Numerics.square(vols[sub]-objVolumeMean[obj])/(nsub-1.0f);
+        }
+        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            logVolStdv2[obj1][obj2] = (float)FastMath.sqrt(logVolStdv2[obj1][obj2]);
+            if (logVolMean2[obj1][obj2]>0) {
+                System.out.println(obj1+"|"+obj2+" : "+FastMath.exp(logVolMean2[obj1][obj2])
+                                                 +" ["+FastMath.exp(logVolMean2[obj1][obj2]-logVolStdv2[obj1][obj2])
+                                                 +", "+FastMath.exp(logVolMean2[obj1][obj2]+logVolStdv2[obj1][obj2])+"]");
             }
-            objVolumeStdv[obj] = (float)FastMath.sqrt(objVolumeStdv[obj]);
-        }            
-        
+        }
 		// at this point the atlas data is not used anymore
 		levelsets = null;
 		contrasts = null;
 		System.out.println("\ndone");
 	}
 
-	public final void estimateTarget() {	
+	public final void estimateTarget() {
 		
 		// compute the median of stdevs from atlas -> scale for image distances
 		// use only the j|j labels -> intra class variations
@@ -1611,13 +1292,17 @@ public class ConditionalShapeSegmentation {
 		}
 	}
 	
-	public final void collapseConditionalMaps() {	    
+	public final void collapseToJointMaps() {
+	    jointLabels = new int[nbest][ndata];
+	    jointProbas = new float[nbest][ndata];
+	    
         for (int id=0;id<ndata;id++) {
             double[][] posteriors = new double[nobj][nobj];
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
                 int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
-                posteriors[obj1][obj2] = combinedProbas[best][id];
+                if (obj1>-1 && obj2>-1)
+                    posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1632,20 +1317,53 @@ public class ConditionalShapeSegmentation {
             }
             for (int best=0;best<nbest;best++) {
                 int best1=0;
-                int best2=0;
                     
-                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                    if (posteriors[obj1][obj2]>posteriors[best1][best2]) {
+                for (int obj1=0;obj1<nobj;obj1++) {
+                    if (posteriors[obj1][obj1]>posteriors[best1][best1]) {
                         best1 = obj1;
-                        best2 = obj2;
                     }
                 }
                 // sub optimal labeling, but easy to read
-                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
-                combinedLabels[best][id] = best1;
-                combinedProbas[best][id] = (float)posteriors[best1][best2];
+                jointLabels[best][id] = best1;
+                jointProbas[best][id] = (float)posteriors[best1][best1];
                 // remove best value
-                posteriors[best1][best2] = 0.0;
+                posteriors[best1][best1] = 0.0;
+ 		    }
+        }
+    }  
+	
+	public final void collapseConditionalMaps() {	    
+        for (int id=0;id<ndata;id++) {
+            double[][] posteriors = new double[nobj][nobj];
+            for (int best=0;best<nbest;best++) {
+                int obj1 = Numerics.floor(combinedLabels[best][id]/100)-1;
+                int obj2 = combinedLabels[best][id]-(obj1+1)*100-1;
+                if (obj1>-1 && obj2>-1)
+                    posteriors[obj1][obj2] = Numerics.max(posteriors[obj1][obj2],combinedProbas[best][id]);
+            }
+            if (sumPosterior) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                   posteriors[obj1][obj1] += posteriors[obj1][obj2];
+                   posteriors[obj1][obj2] = 0.0;
+                }
+            } else if (maxPosterior) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
+                    posteriors[obj1][obj1] = Numerics.max(posteriors[obj1][obj1],posteriors[obj1][obj2]);
+                    posteriors[obj1][obj2] = 0.0;
+                }
+            }
+            for (int best=0;best<nbest;best++) {
+                int best1=0;
+                for (int obj1=0;obj1<nobj;obj1++) {
+                    if (posteriors[obj1][obj1]>posteriors[best1][best1]) {
+                        best1 = obj1;
+                    }
+                }
+                // sub optimal labeling, but easy to read
+                combinedLabels[best][id] = best1;
+                combinedProbas[best][id] = (float)posteriors[best1][best1];
+                // remove best value
+                posteriors[best1][best1] = 0.0;
  		    }
         }
     }
@@ -1656,7 +1374,8 @@ public class ConditionalShapeSegmentation {
             for (int best=0;best<nbest;best++) {
                 int obj1 = Numerics.floor(spatialLabels[best][id]/100)-1;
                 int obj2 = spatialLabels[best][id]-(obj1+1)*100-1;
-                priors[obj1][obj2] = spatialProbas[best][id];
+                if (obj1>-1 && obj2>-1)
+                    priors[obj1][obj2] =  Numerics.max(priors[obj1][obj2],spatialProbas[best][id]);
             }
             if (sumPosterior) {
                 for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) if (obj2!=obj1) {
@@ -1671,20 +1390,16 @@ public class ConditionalShapeSegmentation {
             }
             for (int best=0;best<nbest;best++) {
                 int best1=0;
-                int best2=0;
-                    
-                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
-                    if (priors[obj1][obj2]>priors[best1][best2]) {
+                for (int obj1=0;obj1<nobj;obj1++) {
+                    if (priors[obj1][obj1]>priors[best1][best1]) {
                         best1 = obj1;
-                        best2 = obj2;
                     }
                 }
                 // sub optimal labeling, but easy to read
-                //combinedLabels[best][idmap[xyz]] = 100*(best1+1)+(best2+1);
                 spatialLabels[best][id] = best1;
-                spatialProbas[best][id] = (float)priors[best1][best2];
+                spatialProbas[best][id] = (float)priors[best1][best1];
                 // remove best value
-                priors[best1][best2] = 0.0;
+                priors[best1][best1] = 0.0;
  		    }
         }
     }
@@ -1759,7 +1474,7 @@ public class ConditionalShapeSegmentation {
                     
                     for (int best=0;best<nbest;best++) {
                         if (combinedLabels[best][id]==100*(obj1+1)+(obj2+1)) {
-                            diffused[obj1][obj2] = combinedProbas[best][id];
+                            diffused[obj1][obj2] = Numerics.max(diffused[obj1][obj2],combinedProbas[best][id]);
                         }
                     }
                     if (diffused[obj1][obj2]>0) {
@@ -1827,7 +1542,7 @@ public class ConditionalShapeSegmentation {
 		target = null;
 	}
 	
-	public final void fastSimilarityDiffusion(int nngb) {	
+	public final void fastSimilarityDiffusion(int nngb) {
 		
 		float[][] target = targetImages;
 		// add a local diffusion step?
@@ -1900,8 +1615,8 @@ public class ConditionalShapeSegmentation {
                     int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
                     int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
                      
-                    diffused[obj1][obj2] = combinedProbas[best][id];
-                    if (diffused[obj1][obj2]>0) {
+                    if (diffused[obj1][obj2]==0) {
+                        diffused[obj1][obj2] = combinedProbas[best][id];
                         float den = ngbw[nngb][id];
                         diffused[obj1][obj2] *= den;
                         
@@ -1910,7 +1625,7 @@ public class ConditionalShapeSegmentation {
                             float ngbmax = 0.0f;
                             // max over neighbors ( -> stop at first found)
                             for (int bestngb=0;bestngb<nbest;bestngb++) {
-                                if (combinedLabels[bestngb][ngb]==combinedProbas[best][id]) {
+                                if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
                                     ngbmax = combinedProbas[bestngb][ngb];
                                     bestngb=nbest;
                                 }
@@ -1933,12 +1648,12 @@ public class ConditionalShapeSegmentation {
                             best1 = obj1;
                             best2 = obj2;
                         }
-                        // sub optimal labeling, but easy to read
-                        diffusedLabels[best][id] = 100*(best1+1)+(best2+1);
-                        diffusedProbas[best][id] = (float)diffused[best1][best2];
-                        // remove best value
-                        diffused[best1][best2] = 0.0;
                     }
+                    // sub optimal labeling, but easy to read
+                    diffusedLabels[best][id] = 100*(best1+1)+(best2+1);
+                    diffusedProbas[best][id] = (float)diffused[best1][best2];
+                    // remove best value
+                    diffused[best1][best2] = 0.0;
                 }
             }
             double diff = 0.0;
@@ -1959,210 +1674,219 @@ public class ConditionalShapeSegmentation {
 
 		target = null;
 	}
-	/*
-	public void maximumPosteriorThreshold() {
-        // final segmentation: collapse onto result images
-        finalLabel = new int[nxyz];
-        finalProba = new float[nxyz];
-        for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
-            int xyz = x+ntx*y+ntx*nty*z;
-            if (mask[xyz]) {
-                finalLabel[xyz] = combinedLabels[0][idmap[xyz]];
-            }
-        }
-        return;            
-	}*/
-	/*
-	public void optimalVolumeThreshold(float spread, float scale, boolean certainty) {
-	    // main idea: region growing from inside, until within volume prior
-	    // and a big enough difference in "certainty" score?
-	    
-		// find appropriate threshold to have correct volume; should use a fast marching approach!
-		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
-		int[] labels = new int[ndata];
-        int[] start = new int[nobj];
-        float[] bestscore = new float[nobj];
-        for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
-		double[] voldata = new double[nobj];
-        heap.reset();
-		// important: skip first label as background (allows for unbounded growth)
-        for (int obj=1;obj<nobj;obj++) {
-		    // find highest scoring voxel as starting point
-            for (int b=0;b<nbest-1;b++) {
-                for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
-                    int xyz=x+nx*y+nx*ny*z;
-                    if (mask[xyz]) {
-                        int id = idmap[xyz];
-                        if (combinedLabels[b][idmap[xyz]]==obj) {
-                            float score;
-                            if (certainty) {
-                                score = combinedProbas[b][idmap[xyz]]-combinedProbas[b+1][idmap[xyz]];
-                            } else {
-                                score = combinedProbas[b][idmap[xyz]];
-                            }
-                            if (score>bestscore[obj]) {
-                                bestscore[obj] = score;
-                                start[obj] = xyz;
-                            }
-                            if (b==0) voldata[obj] += rx*ry*rz;
+		
+	public final void fastJointSimilarityDiffusion(int nngb) {
+		
+		float[][] target = targetImages;
+		// add a local diffusion step?
+		System.out.print("Diffusion step: \n");
+		
+		// graph = N-most likely neihgbors (based on target intensity)
+		System.out.print("Build similarity and dissimilarity neighborhoods\n");
+ 		float[][] ngbws = new float[nngb+1][ndata];
+		float[][] ngbwd = new float[nngb+1][ndata];
+		int[][] ngbis = new int[nngb][ndata];
+		int[][] ngbid = new int[nngb][ndata];
+		float[] ngbsim = new float[26];
+		
+		for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+		    int xyz = x+nx*y+nx*ny*z;
+		    if (mask[xyz]) {
+		        for (byte d=0;d<26;d++) {
+		            int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
+		            if (mask[ngb]) {
+		                ngbsim[d] = 1.0f;
+		                for (int c=0;c<nc;c++) {
+		                    //ngbsim[d] *= 1.0f/Numerics.max(1e-6,Numerics.abs(target[c][xyz]-target[c][ngb])/medstdv[c]);
+                            ngbsim[d] *= (float)FastMath.exp( -0.5/nc*(target[c][xyz]-target[c][ngb])*(target[c][xyz]-target[c][ngb])
+                                         /(medstdv[c]*medstdv[c]) );
                         }
+                        //if (ngbsim[d]==0) System.out.print("!");
+                    } else {
+                        ngbsim[d] = 0.0f;
                     }
                 }
-                if (bestscore[obj]>-INF) b = nbest;
+                // choose the N best ones
+                ngbws[nngb][idmap[xyz]] = 0.0f;
+                for (int n=0;n<nngb;n++) {
+                    byte best=0;
+                        
+                    for (byte d=0;d<26;d++)
+                        if (ngbsim[d]>ngbsim[best]) 
+                            best = d;
+                    
+                    ngbws[n][idmap[xyz]] = ngbsim[best];
+                    ngbis[n][idmap[xyz]] = idmap[Ngb.neighborIndex(best, xyz, nx,ny,nz)];
+                    ngbws[nngb][idmap[xyz]] += ngbsim[best];
+                    
+                    ngbsim[best] = -ngbsim[best];
+                }
+                for (byte d=0;d<26;d++) if (ngbsim[d]<0) ngbsim[d] = -ngbsim[d];
+                // choose the N worst ones
+                ngbwd[nngb][idmap[xyz]] = 0.0f;
+                for (int n=0;n<nngb;n++) {
+                    byte worst=0;
+                        
+                    for (byte d=0;d<26;d++)
+                        if (ngbsim[d]<ngbsim[worst]) 
+                            worst = d;
+                    
+                    ngbwd[n][idmap[xyz]] = 1.0f-ngbsim[worst];
+                    ngbid[n][idmap[xyz]] = idmap[Ngb.neighborIndex(worst, xyz, nx,ny,nz)];
+                    ngbwd[nngb][idmap[xyz]] += 1.0f-ngbsim[worst];
+                    
+                    ngbsim[worst] = 2.0f;
+                }
+                //if (ngbw[nngb][idmap[xyz]]==0) System.out.print("0");
             }
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
-        }
-        // Posterior volumes:
-        for (int obj=1;obj<nobj;obj++) {
-            double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
-            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
-                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-            System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
-            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
-        }   
-        
-        float[] prev = new float[nobj];
-        double[] vol = new double[nobj];
-        double[] bestvol = new double[nobj];
-        double[] bestproba = new double[nobj];
-        while (heap.isNotEmpty()) {
-            float score = heap.getFirst();
-            int xyz = heap.getFirstId();
-            byte obj = heap.getFirstState();
-            heap.removeFirst();
-            if (labels[idmap[xyz]]==0) {
-                double volmean = objVolumeMean[obj];
-                double volstdv = objVolumeStdv[obj];
-                // posterior estimate of the volumes? or just prior?
-                //double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
-                //double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
-                //                    + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-                
-                // compute the joint probability function
-                double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
-                double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
-                double pscore = FastMath.exp(-0.5*(score*score)/(scale*scale));
-                
-                //double pstop = pvol*pdiff*pscore;
-                double pstop = pvol*pscore;
-                //double pstop = pvol*pdiff;
-                //double pstop = pvol;
-                if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
-                    bestproba[obj] = pstop;
-                    bestvol[obj] = vol[obj];
-                }
-                // update the values
-                vol[obj]+= rx*ry*rz;
-                labels[idmap[xyz]] = obj;
-                prev[obj] = score;
-                
-                // run until the volume exceeds the mean volume + n*stdev
-                if (vol[obj]<volmean+spread*volstdv) {
-                    // add neighbors
-                    for (byte k = 0; k<6; k++) {
-                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
-                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
-                            if (mask[ngb]) {
-                                if (labels[idmap[ngb]]==0) {
-                                    for (int best=0;best<nbest;best++) {
-                                        if (combinedLabels[best][idmap[ngb]]==obj) {
-                                            if (certainty) {
-                                                if (best==0) {
-                                                    heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
-                                                } else {
-                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
-                                                }
-                                            } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
-                                            }
-                                            best=nbest;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        }  
+        ngbw = ngbwd;
+		System.out.print("\n");
+
+		// diffusion only between i|j <-> i|j, not i|j <-> i|k, i|j <-> j|i
+		
+		float[][] diffusedProbas = new float[nbest][ndata]; 
+		int[][] diffusedLabels = new int[nbest][ndata];
+		
+		// first copy the originals, then iterate on the copy?
+		for (int id=0;id<ndata;id++) {
+		    for (int best=0;best<nbest;best++) {
+                diffusedProbas[best][id] = combinedProbas[best][id];
+                diffusedLabels[best][id] = combinedLabels[best][id];
             }
         }
-        //System.out.println("Average volumes: ");
-        //for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
-        System.out.println("\nOptimized volumes: ");
-        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
-        // re-run one last time to get the segmentation
-        heap.reset();
-        for (int obj=0;obj<nobj;obj++) {
-            vol[obj] = 0.0;
-        }
-        for(int id=0;id<ndata;id++) labels[id] = 0;
-        for (int obj=1;obj<nobj;obj++) {
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
-        }
-        while (heap.isNotEmpty()) {
-            float score = heap.getFirst();
-            int xyz = heap.getFirstId();
-            byte obj = heap.getFirstState();
-            heap.removeFirst();
-            if (labels[idmap[xyz]]==0) {
-                if (vol[obj]<bestvol[obj]) {
-                    // update the values
-                    vol[obj]+=rx*ry*rz;
-                    labels[idmap[xyz]] = obj;
-                
-                    // add neighbors
-                    for (byte k = 0; k<6; k++) {
-                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
-                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
-                            if (mask[ngb]) {
-                                if (labels[idmap[ngb]]==0) {
-                                    for (int best=0;best<nbest;best++) {
-                                        if (combinedLabels[best][idmap[ngb]]==obj) {
-                                            if (certainty) {
-                                                if (best==0) {
-                                                    heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
-                                                } else {
-                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
-                                                }
-                                            } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
-                                            }
-                                            best=nbest;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+		    		
+		double[][] diffused = new double[nobj][nobj];
+        for (int t=0;t<maxiter;t++) {
+		    for (int id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    diffused[obj1][obj2] = 0.0;
                 }
-            }
-        }
-        // final segmentation: collapse onto result images
-        finalLabel = new int[nxyz];
-        finalProba = new float[nxyz];
-        float[] kept = new float[nobj];
-        for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
-            int xyz = x+ntx*y+ntx*nty*z;
-            if (mask[xyz]) {
-                int obj = labels[idmap[xyz]];
+                
                 for (int best=0;best<nbest;best++) {
-                    if (combinedLabels[best][idmap[xyz]]==obj) {
-                        if (certainty) {
-                            if (best==0) {
-                                finalProba[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                            } else {
-                                finalProba[xyz] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
+                    int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                    
+                    
+                    if (diffused[obj1][obj2]==0) {
+                        if (obj1==obj2) {
+                            // no dissimilarity processing here
+                            diffused[obj1][obj2] = combinedProbas[best][id];
+                            //float den = 2.0f*ngbws[nngb][id]*ngbwd[nngb][id];
+                            float den = ngbws[nngb][id] + ngbwd[nngb][id];
+                            //float den = ngbws[nngb][id];
+                            diffused[obj1][obj2] *= den;
+                        
+                            // similarity
+                            for (int n=0;n<nngb;n++) {
+                                int ngb = ngbis[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==101*(obj1+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj1] += ngbws[n][id]*ngbmax;
                             }
+                            // dissimilarity : anything at the boundary is valid
+                            for (int n=0;n<nngb;n++) {
+                                int ngb = ngbid[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    // transition to boundary or remaining inside both valid
+                                    if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]<100*(obj1+2)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj1] += ngbwd[n][id]*ngbmax;
+                            }
+                            den += ngbws[nngb][id]+ngbwd[nngb][id];
+                            diffused[obj1][obj2] /= den;
                         } else {
-                            finalProba[xyz] = combinedProbas[best][idmap[xyz]];
+                            // combines similarity and dissimilarity processing
+                            diffused[obj1][obj2] = combinedProbas[best][id];
+                            //float den = 2.0f*ngbws[nngb][id]*ngbwd[nngb][id];
+                            float den = ngbws[nngb][id]+ngbwd[nngb][id];
+                            diffused[obj1][obj2] *= den;
+                        
+                            // similarity
+                            for (int n=0;n<nngb;n++) {
+                                int ngb = ngbis[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += ngbws[n][id]*ngbmax;
+                            }
+                            // dissimilarity: inverse boundary or interior
+                            for (int n=0;n<nngb;n++) {
+                                int ngb = ngbid[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)
+                                        || combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += ngbwd[n][id]*ngbmax;
+                            }
+                            // normalize
+                            den += ngbws[nngb][id]+ngbwd[nngb][id];
+                            diffused[obj1][obj2] /= den;
                         }
-                        best=nbest;
                     }
                 }
-                finalLabel[xyz] = obj;
+                for (int best=0;best<nbest;best++) {
+                    int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int best2 = Numerics.round(combinedLabels[best][id]-100*(best1+1)-1);
+                        
+                    for (int next=0;next<nbest;next++) {
+                        int obj1 = Numerics.floor(combinedLabels[next][id]/100.0f)-1;
+                        int obj2 = Numerics.round(combinedLabels[next][id]-100*(obj1+1)-1);
+                        if (diffused[obj1][obj2]>diffused[best1][best2]) {
+                            best1 = obj1;
+                            best2 = obj2;
+                        }
+                    }
+                    // sub optimal labeling, but easy to read
+                    diffusedLabels[best][id] = 100*(best1+1)+(best2+1);
+                    diffusedProbas[best][id] = (float)diffused[best1][best2];
+                    // remove best value
+                    diffused[best1][best2] = 0.0;
+                }
             }
-        }
-        return;            
-	}*/
+            double diff = 0.0;
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                if (combinedLabels[best][id] == diffusedLabels[best][id]) {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 0.0;
+                } else {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 1.0;
+                }
+                combinedLabels[best][id] = diffusedLabels[best][id];
+                combinedProbas[best][id] = diffusedProbas[best][id];
+            }
+            System.out.println("diffusion step "+t+": "+(diff/ndata));
+            if (diff/ndata<maxdiff) t=maxiter;
+		}
+
+		target = null;
+	}
 		
 	private int[] atlasVolumeLabels(float[] pval, int[] lval) {
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
@@ -2190,19 +1914,21 @@ public class ConditionalShapeSegmentation {
             heap.addValue(bestscore[obj],start[obj],(byte)obj);
         }
         double[] vol = new double[nobj];
+        double[] volmean = new double[nobj];
+        for (int obj=1;obj<nobj;obj++) volmean[obj] = FastMath.exp(logVolMean[obj]);
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
             int xyz = heap.getFirstId();
             byte obj = heap.getFirstState();
             heap.removeFirst();
             if (labels[xyz]==0) {
-                 if (vol[obj]<objVolumeMean[obj]) {
+                 if (vol[obj]<volmean[obj]) {
                     // update the values
                     vol[obj]+=rax*ray*raz;
                     labels[xyz] = obj;
                 
                     // add neighbors
-                    for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nax, nay, naz);
                         if (ngb>0 && ngb<naxyz) {
                            if (labels[ngb]==0) {
@@ -2220,14 +1946,556 @@ public class ConditionalShapeSegmentation {
         }
         return labels;            
 	}
+			
+	private int[] atlasBoundaryLabels(float[] pval, int[] lval) {
+		// find appropriate threshold to have correct volume; should use a fast marching approach!
+		BinaryHeapPair	heap = new BinaryHeapPair(nax*nay+nay*naz+naz*nax, BinaryHeapPair.MAXTREE);
+		int[] labels = new int[naxyz];
+        int[] start = new int[nobj];
+        float[] bestscore = new float[nobj];
+        for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
+        heap.reset();
+		// important: skip first label as background (allows for unbounded growth)
+        for (int obj=1;obj<nobj;obj++) {
+		    // find highest scoring voxel as starting point
+            for (int b=0;b<nbest-1;b++) {
+                for (int x=1;x<nax-1;x++) for (int y=1;y<nay-1;y++) for (int z=1;z<naz-1;z++) {
+                    int xyz=x+nax*y+nax*nay*z;
+                    if (Numerics.floor(lval[xyz+b*naxyz]/100.0f)==obj+1) {
+                        if (pval[xyz+b*naxyz]>bestscore[obj]) {
+                            bestscore[obj] = pval[xyz+b*naxyz];
+                            start[obj] = xyz;
+                        }
+                    }
+                }
+                if (bestscore[obj]>-INF) b = nbest;
+            }
+            heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+        }
+        double[] vol = new double[nobj];
+        double[] volmean = new double[nobj];
+        for (int obj=1;obj<nobj;obj++) volmean[obj] = FastMath.exp(logVolMean[obj]);
+        while (heap.isNotEmpty()) {
+            float score = heap.getFirst();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
+            int obj1 = Numerics.floor(obj1obj2/100.0f)-1;
+            int obj2 = Numerics.round(obj1obj2-100*(obj1+1)-1);
+            heap.removeFirst();
+            if (labels[xyz]==0) {
+                 if (vol[obj1]<volmean[obj1]) {
+                    // update the values
+                    vol[obj1]+=rax*ray*raz;
+                    labels[xyz] = obj1obj2;
+                
+                    // add neighbors
+                    for (byte k = 0; k<26; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nax, nay, naz);
+                        if (ngb>0 && ngb<naxyz) {
+                           if (labels[ngb]==0) {
+                                for (int best=0;best<nbest;best++) {
+                                    if (Numerics.floor(lval[xyz+best*naxyz]/100.0f)==obj1+1) {
+                                       heap.addValue(pval[ngb+best*naxyz],ngb,lval[xyz+best*naxyz]);
+                                       best=nbest;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return labels;            
+	}
+	
+	public final void fastCombinedSimilarityDiffusion(int nngb) {	
 		
-	public void optimalVolumeCertaintyThreshold(float spread) {
+		float[][] target = targetImages;
+		// add a local diffusion step?
+		System.out.print("Diffusion step: \n");
+		
+		// graph = N-most likely neihgbors (based on target intensity)
+		System.out.print("Build similarity neighborhood\n");
+ 		ngbw = new float[nngb+1][ndata];
+		int[][] ngbi = new int[nngb][ndata];
+		float[] ngbsim = new float[26];
+		
+		for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+		    int xyz = x+nx*y+nx*ny*z;
+		    if (mask[xyz]) {
+		        for (byte d=0;d<26;d++) {
+		            int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
+		            if (mask[ngb]) {
+		                ngbsim[d] = 1.0f;
+		                for (int c=0;c<nc;c++) {
+		                    //ngbsim[d] *= 1.0f/Numerics.max(1e-6,Numerics.abs(target[c][xyz]-target[c][ngb])/medstdv[c]);
+                            ngbsim[d] *= (float)FastMath.exp( -0.5/nc*(target[c][xyz]-target[c][ngb])*(target[c][xyz]-target[c][ngb])
+                                         /(medstdv[c]*medstdv[c]) );
+                        }
+                        //if (ngbsim[d]==0) System.out.print("!");
+                    } else {
+                        ngbsim[d] = 0.0f;
+                    }
+                }
+                // choose the N best and worst ones
+                ngbw[nngb][idmap[xyz]] = 0.0f;
+                for (int n=0;n<nngb;n++) {
+                    byte best=0;
+                        
+                    for (byte d=0;d<26;d++)
+                        if (Numerics.max(ngbsim[d],1.0f-ngbsim[d])>Numerics.max(ngbsim[best],1.0-ngbsim[best])) 
+                            best = d;
+                    
+                    if (ngbsim[best]>0.5f) ngbw[n][idmap[xyz]] = ngbsim[best];
+                    else ngbw[n][idmap[xyz]] = ngbsim[best] - 1.0f;
+                    ngbi[n][idmap[xyz]] = idmap[Ngb.neighborIndex(best, xyz, nx,ny,nz)];
+                    ngbw[nngb][idmap[xyz]] += Numerics.abs(ngbsim[best]);
+                    
+                    ngbsim[best] = 0.5f;
+                }
+                //if (ngbw[nngb][idmap[xyz]]==0) System.out.print("0");
+            }
+        }  
+		System.out.print("\n");
+
+		// diffusion only between i|j <-> i|j, not i|j <-> i|k, i|j <-> j|i
+		
+		float[][] diffusedProbas = new float[nbest][ndata]; 
+		int[][] diffusedLabels = new int[nbest][ndata];
+		
+		// first copy the originals, then iterate on the copy?
+		for (int id=0;id<ndata;id++) {
+		    for (int best=0;best<nbest;best++) {
+                diffusedProbas[best][id] = combinedProbas[best][id];
+                diffusedLabels[best][id] = combinedLabels[best][id];
+            }
+        }
+		    		
+		double[][] diffused = new double[nobj][nobj];
+        for (int t=0;t<maxiter;t++) {
+		    for (int id=0;id<ndata;id++) if (ngbw[nngb][id]>0) {
+                for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+                    diffused[obj1][obj2] = 0.0;
+                }
+                
+                for (int best=0;best<nbest;best++) {
+                    int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                     
+                    diffused[obj1][obj2] = Numerics.max(diffused[obj1][obj2],combinedProbas[best][id]);
+                }
+                for (int best=0;best<nbest;best++) {
+                    int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                     
+                    if (diffused[obj1][obj2]>0) {
+                        double den = 1.0*ngbw[nngb][id];
+                        diffused[obj1][obj2] *= den;
+                        
+                        for (int n=0;n<nngb;n++) {
+                            if (ngbw[n][id]>0) {
+                                int ngb = ngbi[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += ngbw[n][id]*ngbmax;
+                                den += ngbw[n][id];
+                            } else if (obj1==obj2) {
+                                int ngb = ngbi[n][id];
+                                float ngbmax = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]>100*(obj1+2)) {
+                                        ngbmax = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += -ngbw[n][id]*ngbmax;
+                                den += -ngbw[n][id];
+                            } else {
+                                int ngb = ngbi[n][id];
+                                float ngbmax0 = 0.0f;
+                                float ngbmax1 = 0.0f;
+                                // max over neighbors ( -> stop at first found)
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) 
+                                        || combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
+                                        ngbmax0 = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                    if (combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1) 
+                                        || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj2+1)) {
+                                        ngbmax1 = combinedProbas[bestngb][ngb];
+                                        bestngb=nbest;
+                                    }
+                                }
+                                double ptrans = 0.5 + 0.5*(ngbmax1-ngbmax0);
+                                //if (ngbmax==0) System.out.print("0");
+                                diffused[obj1][obj2] += -ngbw[n][id]*(ptrans*ngbmax1+(1.0-ptrans)*ngbmax0);
+                                den += -ngbw[n][id];
+                            }
+                        }
+                        diffused[obj1][obj2] /= den;
+                    }
+                }
+                for (int best=0;best<nbest;best++) {
+                    int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                    int best2 = Numerics.round(combinedLabels[best][id]-100*(best1+1)-1);
+                        
+                    for (int next=0;next<nbest;next++) {
+                        int obj1 = Numerics.floor(combinedLabels[next][id]/100.0f)-1;
+                        int obj2 = Numerics.round(combinedLabels[next][id]-100*(obj1+1)-1);
+                        if (diffused[obj1][obj2]>diffused[best1][best2]) {
+                            best1 = obj1;
+                            best2 = obj2;
+                        }
+                    }
+                    // sub optimal labeling, but easy to read
+                    diffusedLabels[best][id] = 100*(best1+1)+(best2+1);
+                    diffusedProbas[best][id] = (float)diffused[best1][best2];
+                    // remove best value
+                    diffused[best1][best2] = 0.0;
+                }
+            }
+            double diff = 0.0;
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                if (combinedLabels[best][id] == diffusedLabels[best][id]) {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 0.0;
+                } else {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 1.0;
+                }
+                combinedLabels[best][id] = diffusedLabels[best][id];
+                combinedProbas[best][id] = diffusedProbas[best][id];
+            }
+            System.out.println("diffusion step "+t+": "+(diff/ndata));
+            if (diff/ndata<maxdiff) t=maxiter;
+		}
+
+		target = null;
+	}
+		
+	public final void globalSmoothing(int nngb) {	
+		
+		System.out.print("global smoothing step: \n");
+        ngbw = new float[nngb+1][ndata];
+				
+		float[][] smoothedProbas = new float[nbest][ndata]; 
+		int[][] smoothedLabels = new int[nbest][ndata];
+		for (int t=0;t<maxiter;t++) {
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz = x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    int id = idmap[xyz];
+                    double[][] smoothed = new double[nobj][nobj];
+                    for (int best=0;best<nbest;best++) {
+                        int obj1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                        int obj2 = Numerics.round(combinedLabels[best][id]-100*(obj1+1)-1);
+                         
+                        if (smoothed[obj1][obj2]==0) {
+                            float den = 0.0f;
+                            for (byte d=0;d<26;d++) {
+                                int ngb = Ngb.neighborIndex(d, xyz, nx,ny,nz);
+                                if (mask[ngb]) {
+                                    ngb = idmap[ngb];
+                                    float ngbmax = 0.0f;
+                                    if (obj1==obj2) {
+                                        // max over neighbors ( -> stop at first found)
+                                        for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                            if (combinedLabels[bestngb][ngb]>100*(obj1+1) && combinedLabels[bestngb][ngb]<100*(obj1+2)) {
+                                                ngbmax = combinedProbas[bestngb][ngb];
+                                                bestngb=nbest;
+                                            }
+                                        }
+                                    } else {
+                                        // max over neighbors ( -> stop at first found)
+                                        for (int bestngb=0;bestngb<nbest;bestngb++) {
+                                            if (combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj1+1) 
+                                                || combinedLabels[bestngb][ngb]==100*(obj2+1)+(obj1+1)
+                                                || combinedLabels[bestngb][ngb]==100*(obj1+1)+(obj2+1)) {
+                                                ngbmax = combinedProbas[bestngb][ngb];
+                                                bestngb=nbest;
+                                            }
+                                        }
+                                    }
+                                    if (ngbmax>0) {
+                                        smoothed[obj1][obj2] += ngbmax;
+                                        den += 1.0f;
+                                    }
+                                }
+                            }
+                            smoothed[obj1][obj2] += 9.0*den*combinedProbas[best][id];
+                            if (den>0) smoothed[obj1][obj2] /= 10.0*den;
+                        }
+                    }
+                    for (int best=0;best<nbest;best++) {
+                        int best1 = Numerics.floor(combinedLabels[best][id]/100.0f)-1;
+                        int best2 = Numerics.round(combinedLabels[best][id]-100*(best1+1)-1);
+                            
+                        for (int next=0;next<nbest;next++) {
+                            int obj1 = Numerics.floor(combinedLabels[next][id]/100.0f)-1;
+                            int obj2 = Numerics.round(combinedLabels[next][id]-100*(obj1+1)-1);
+                            if (smoothed[obj1][obj2]>smoothed[best1][best2]) {
+                                best1 = obj1;
+                                best2 = obj2;
+                            }
+                        }
+                        // sub optimal labeling, but easy to read
+                        smoothedLabels[best][id] = 100*(best1+1)+(best2+1);
+                        smoothedProbas[best][id] = (float)smoothed[best1][best2];
+                        // remove best value
+                        smoothed[best1][best2] = 0.0;
+                    }
+                }
+            }
+            double diff = 0.0;
+            for (int id=0;id<ndata;id++) for (int best=0;best<nbest;best++) {
+                if (combinedLabels[best][id] == smoothedLabels[best][id]) {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 0.0;
+                } else {
+                    //diff += Numerics.abs(diffusedProbas[best][idmap[xyz]]-combinedProbas[best][idmap[xyz]]);
+                    diff += 1.0;
+                }
+                combinedLabels[best][id] = smoothedLabels[best][id];
+                combinedProbas[best][id] = smoothedProbas[best][id];
+            }
+            System.out.println("smoothing step "+t+": "+(diff/ndata));
+            if (diff/ndata<maxdiff) t=maxiter;
+        }
+    }
+		
+	public void topologyBoundaryDefinition(String connectType, String lutdir) {
+
+	    // load topology LUT
+	    CriticalPointLUT lut;
+             if (connectType.equals("26/6")) lut = new CriticalPointLUT(lutdir, "critical266LUT.raw.gz",200);
+        else if (connectType.equals("6/26")) lut = new CriticalPointLUT(lutdir, "critical626LUT.raw.gz",200);
+        else if (connectType.equals("18/6")) lut = new CriticalPointLUT(lutdir, "critical186LUT.raw.gz",200);
+        else if (connectType.equals("6/18")) lut = new CriticalPointLUT(lutdir, "critical618LUT.raw.gz",200);
+        else if (connectType.equals("6/6")) lut = new CriticalPointLUT(lutdir, "critical66LUT.raw.gz",200);
+        else                                lut = new CriticalPointLUT(lutdir, "criticalWCLUT.raw.gz",200);
+		if (!lut.loadCompressedPattern()) {
+			System.out.println("Problem loading the algorithm's LUT from: "+lutdir);
+			return;
+        } else {
+			System.out.println("LUT loaded from: "+lutdir);
+		}
+		
+		// use a 6-neighborhood for maximum regularity
+		int ngbdist = 2;
+		
+		// here we assume the maps have been collapsed into objects
+		
+		// initialize each boundary from bounding box per structure
+		float minproba = 0.0f;
+		float mindist = 0.000001f;
+		
+        int[] x0 = new int[nobj];
+		int[] y0 = new int[nobj];
+		int[] z0 = new int[nobj];
+		
+		int[] xN = new int[nobj];
+		int[] yN = new int[nobj];
+		int[] zN = new int[nobj];
+		
+		for (int obj=0;obj<nobj;obj++) {
+		    x0[obj] = nx;
+		    y0[obj] = ny;
+		    z0[obj] = nz;
+		    xN[obj] = -1;
+		    yN[obj] = -1;
+		    zN[obj] = -1;
+		}
+		for (int x=0;x<nx;x++) for (int y=0;y<ny;y++) for (int z=0;z<nz;z++) {
+            int xyz = x + nx*y + nx*ny*z;
+            if (mask[xyz]){
+                int id = idmap[xyz];
+                for (int obj=1;obj<nobj;obj++) {
+                    for (int best=0;best<nbest;best++) {
+                        if (combinedLabels[best][id]>100*(obj+1) && combinedLabels[best][id]<100*(obj+2) && combinedProbas[best][id]>minproba) {
+                            x0[obj] = Numerics.min(x,x0[obj]);
+                            y0[obj] = Numerics.min(y,y0[obj]);
+                            z0[obj] = Numerics.min(z,z0[obj]);
+                            xN[obj] = Numerics.max(x,xN[obj]);
+                            yN[obj] = Numerics.max(y,yN[obj]);
+                            zN[obj] = Numerics.max(z,zN[obj]); 
+                            best = nbest;
+                        }
+                    }
+                }
+            }
+        }
+        // initialize the topology of the bounding box
+        BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeap2D.MINTREE);
+		// important: skip first label as background (allows for unbounded growth)
+        for (byte obj=1;obj<nobj;obj++) {
+            System.out.print("Structure "+obj+": topology correction");
+            
+		    byte[] topology = new byte[nxyz];
+		    int[] label = new int[nxyz];
+		    float[] score = new float[nxyz];
+		    heap.reset();
+		    // start with the bounding box
+		    for (int x=x0[obj];x<=xN[obj];x++) for (int y=y0[obj];y<=yN[obj];y++) for (int z=z0[obj];z<=zN[obj];z++) {
+		        if (x==x0[obj] || x==xN[obj] || y==y0[obj] || y==yN[obj] || z==z0[obj] || z==zN[obj]) {
+		            int xyz = x+nx*y+nx*ny*z;
+		            topology[xyz] = 1;
+		            score[xyz] = minproba;
+		            label[xyz] = 100*(obj+1);
+		            if (mask[xyz]) {
+		                int id = idmap[xyz];
+		                for (int best=0;best<nbest;best++) {
+		                    if (combinedLabels[best][id]>100*(obj+1) && combinedLabels[best][id]<100*(obj+2)) {
+		                        score[xyz] = combinedProbas[best][id];
+		                        label[xyz] = combinedLabels[best][id];
+		                        best = nbest;
+		                    }
+		                }
+		            }
+		        }
+		    }
+		    // now add the neighbors
+		    for (int x=x0[obj];x<=xN[obj];x++) for (int y=y0[obj];y<=yN[obj];y++) for (int z=z0[obj];z<=zN[obj];z++) {
+		        if (x==x0[obj]+1 || x==xN[obj]-1 || y==y0[obj]+1 || y==yN[obj]-1 || z==z0[obj]+1 || z==zN[obj]-1) {
+		            int xyz = x+nx*y+nx*ny*z;
+		            float val = minproba + mindist;
+		            int lbl = 100*(obj+1);
+		            if (mask[xyz]) {
+		                int id = idmap[xyz];
+		                for (int best=0;best<nbest;best++) {
+		                    if (combinedLabels[best][id]>100*(obj+1) && combinedLabels[best][id]<100*(obj+2)) {
+		                        if (combinedProbas[best][id]>val) {
+                                    val = combinedProbas[best][id];
+                                    lbl = combinedLabels[best][id];
+                                }
+		                        best = nbest;
+		                    }
+		                }
+		            }
+		            heap.addValue(val,xyz,lbl);
+		        }
+		    }
+		    // propagate
+		    int ncritical = 0;
+		    while (heap.isNotEmpty()) {
+                float val = heap.getFirst();
+                int xyz = heap.getFirstId1();
+                int lbl = heap.getFirstId2();
+                heap.removeFirst();
+                
+                // check if already set; if so skip
+                if (topology[xyz]<1) {
+                    // check for higher neighbor
+                    boolean higher = false;
+                    for (int i=-1;i<=1;i++) for (int j=-1;j<=1;j++) for (int l=-1;l<=1;l++) {
+                        int ngb = xyz+i+nx*j+nx*ny*l;
+                        if (topology[ngb]==1 && score[ngb]>val) {
+                            val = score[ngb];
+                            higher = true;
+                        }
+                    }
+                    if (higher) {
+                        heap.addValue(val + mindist,xyz,lbl);
+                    } else {
+                        // check the topology
+                        if (lut.get(lut.keyFromPattern(topology,xyz,1,nx,nx*ny))) {
+                            // regular point
+                            topology[xyz] = 1;
+                            score[xyz] = val;
+                            label[xyz] = lbl;
+                            
+                            // search for neighbors
+                            for (int i=-1;i<=1;i++) for (int j=-1;j<=1;j++) for (int l=-1;l<=1;l++) {
+                                int ngb = xyz+i+nx*j+nx*ny*l;
+                                if (topology[ngb]==0 && i*i+j*j+l*l<ngbdist) {
+                                    // new neighbors
+                                    float nextval = val + mindist;
+                                    int nextlbl = lbl;
+                                    if (mask[ngb]) {
+                                        int id = idmap[ngb];
+                                        for (int best=0;best<nbest;best++) {
+                                            if (combinedLabels[best][id]>100*(obj+1) && combinedLabels[best][id]<100*(obj+2)) {
+                                                if (combinedProbas[best][id]>nextval) {
+                                                    nextval = combinedProbas[best][id];
+                                                    nextlbl = combinedLabels[best][id];
+                                                }
+                                                best = nbest;
+                                           }
+                                        }
+                                    }
+                                    heap.addValue(nextval,ngb,nextlbl);
+                                } else if (topology[ngb]==-1) {
+                                    // missing critical points
+                                    float nextval = val + mindist;
+                                    int nextlbl = lbl;
+                                    heap.addValue(nextval,ngb,nextlbl);
+                                }
+                            }
+                        } else {
+                            // mark as critical, but don't add it to the heap just yet
+                            topology[xyz] = -1;
+                            ncritical++;
+                        }
+		            }
+		        }
+		    }
+		    System.out.println(" critical points: "+ncritical);
+		    // update the combined probas with new values
+            for (int x=0;x<nx;x++) for (int y=0;y<ny;y++) for (int z=0;z<nz;z++) {
+                int xyz = x + nx*y + nx*ny*z;
+                if (mask[xyz] && score[xyz]>0) {
+                    int id = idmap[xyz];
+                    for (int best=0;best<nbest;best++) {
+                        if (combinedProbas[best][id]<score[xyz]) {
+                            if (combinedLabels[best][id]==label[xyz]) {
+                                // same rank: just increase the value
+                                combinedProbas[best][id] = score[xyz];
+                                combinedLabels[best][id] = label[xyz];
+                                best = nbest;
+                            } else {
+                                // increased rank: swap labels until obj is reached
+                                int rank = nbest;
+                                for (int next=best+1;next<nbest;next++) {
+                                    if (combinedLabels[next][id]==label[xyz]) {
+                                        rank = next;
+                                        next = nbest;
+                                    }
+                                }
+                                for (int prev=rank;prev>best;prev--) {
+                                    if (prev<nbest) {
+                                        combinedLabels[prev][id] = combinedLabels[prev-1][id];
+                                        combinedProbas[prev][id] = combinedProbas[prev-1][id];
+                                    }
+                                }
+                                combinedLabels[best][id] = label[xyz];
+                                combinedProbas[best][id] = score[xyz];
+                                best = nbest;
+                            }
+                        }
+                    }
+                }
+            }
+                                    
+        }
+        return;            
+	}
+
+	public void precomputeStoppingStatistics(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
 	    
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
-		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
-		int[] labels = new int[ndata];
         int[] start = new int[nobj];
         float[] bestscore = new float[nobj];
 		for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
@@ -2236,19 +2504,44 @@ public class ConditionalShapeSegmentation {
         double[] devbound = new double[nobj];
         double[] devdiff = new double[nobj];
         int[] nbound = new int[nobj];
-		heap.reset();
+
+		// first, find where then next objects probability is in the stack
+        int[][] nextbest = new int[nobj][ndata];
+		for (int obj=1;obj<nobj;obj++) {
+		    for (int n=0;n<ndata;n++) {
+		        nextbest[obj][n] = 0;
+		        if (combinedLabels[0][n]>100*(obj+1) && combinedLabels[0][n]<100*(obj+2)) {
+		            // find the highest proba for a different structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]<100*(obj+1) || combinedLabels[b][n]>100*(obj+2)) {
+                            nextbest[obj][n] = b;
+                            b = nbest;
+                        }
+                    }
+                } else {
+                    // find the highest proba for current structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]>100*(obj+1) || combinedLabels[b][n]<100*(obj+2)) {
+                            nextbest[obj][n] = -b;
+                            b = nbest;
+                        }
+                    }
+                }
+            }
+        }
 		// important: skip first label as background (allows for unbounded growth)
         for (int obj=1;obj<nobj;obj++) {
-		    // find highest scoring voxel as starting point
+		    // compute label volumes
            for (int b=0;b<nbest;b++) {
                for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
                     int xyz=x+nx*y+nx*ny*z;
                     if (mask[xyz]) {
                         int id = idmap[xyz];
-                        if (combinedLabels[b][idmap[xyz]]==obj) {
+                        if (combinedLabels[b][id]>100*(obj+1) && combinedLabels[b][id]<100*(obj+2)) {
+                        //if (combinedLabels[b][idmap[xyz]]==101*(obj+1)) {
                             float score;
-                            if (b==0) score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                            else score = combinedProbas[b][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
+                            if (b==0) score = combinedProbas[0][id]-combinedProbas[nextbest[obj][id]][id];
+                            else score = combinedProbas[b][id]-combinedProbas[0][id];
                             //score = combinedProbas[b][idmap[xyz]];
                             if (score>bestscore[obj]) {
                                 bestscore[obj] = score;
@@ -2260,21 +2553,18 @@ public class ConditionalShapeSegmentation {
                 }
                 if (bestscore[obj]>-INF) b = nbest;
             }
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
+            
             // boundary: mean difference
             for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
                 int xyz=x+nx*y+nx*ny*z;
                 if (mask[xyz]) {
-                    int id = idmap[xyz];
-                    if (combinedLabels[0][idmap[xyz]]==obj || start[obj]==xyz) {
+                    if ((combinedLabels[0][idmap[xyz]]>100*(obj+1) && combinedLabels[0][idmap[xyz]]<100*(obj+2)) || start[obj]==xyz) {
                         for (byte k = 0; k<26; k++) {
                             int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                             if (mask[ngb]) {
                                 // also measure the neighbors' values -> count every pair (values may be used multiple times,
                                 // but the number of samples is equal for inside and outside)
-                                if (combinedLabels[0][idmap[ngb]]!=obj) {
-                                    //avgbound[obj] += combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                                    //avgbound[obj] += combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]];
+                                if (combinedLabels[0][idmap[ngb]]<100*(obj+1) || combinedLabels[0][idmap[ngb]]>100*(obj+2)) {
                                     avgbound[obj] += combinedProbas[0][idmap[xyz]];
                                     avgbound[obj] += combinedProbas[1][idmap[ngb]];
                                     nbound[obj]+=2;
@@ -2289,18 +2579,22 @@ public class ConditionalShapeSegmentation {
             for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
                 int xyz=x+nx*y+nx*ny*z;
                 if (mask[xyz]) {
-                    int id = idmap[xyz];
-                    if (combinedLabels[0][idmap[xyz]]==obj || start[obj]==xyz) {
+                    if ((combinedLabels[0][idmap[xyz]]>100*(obj+1) && combinedLabels[0][idmap[xyz]]<100*(obj+2)) || start[obj]==xyz) {
                         for (byte k = 0; k<26; k++) {
                             int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                             if (mask[ngb]) {
-                                if (combinedLabels[0][idmap[ngb]]!=obj) {
-                                    //devbound[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]-avgbound[obj]);
-                                    //devbound[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]]-avgbound[obj]);
+                                if (combinedLabels[0][idmap[ngb]]<100*(obj+1) || combinedLabels[0][idmap[ngb]]>100*(obj+2)) {
                                     devbound[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-avgbound[obj]);
                                     devbound[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-avgbound[obj]);
-                                    devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]);
-                                    devdiff[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
+                                    if (nextbest[obj][idmap[xyz]]>0)
+                                        devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[nextbest[obj][idmap[xyz]]][idmap[xyz]]);
+                                    else
+                                        devdiff[obj] += Numerics.square(combinedProbas[-nextbest[obj][idmap[xyz]]][idmap[xyz]]-combinedProbas[0][idmap[xyz]]);
+                                    if (nextbest[obj][idmap[ngb]]<0)
+                                        devdiff[obj] += Numerics.square(combinedProbas[-nextbest[obj][idmap[ngb]]][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
+                                    else
+                                        devdiff[obj] += Numerics.square(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]]);
+                                    
                                 }
                             }
                         }
@@ -2314,91 +2608,170 @@ public class ConditionalShapeSegmentation {
         }
         // Posterior volumes:
         for (int obj=1;obj<nobj;obj++) {
-            double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
-            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
-                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-            System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
-            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
+            double logvolmean = 0.5*logVolMean[obj]+0.5*FastMath.log(Numerics.max(1.0,voldata[obj]));
+            double logvolstdv = FastMath.sqrt( 0.5*( Numerics.square(logVolStdv[obj])
+                                + 0.5*Numerics.square(logVolMean[obj]-FastMath.log(Numerics.max(1.0,voldata[obj]))) ) );
+            System.out.print("Label "+obj+": atlas volume = "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]");
+            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+FastMath.exp(logvolmean)+" ["+FastMath.exp(logvolmean-spread*logvolstdv)+", "+FastMath.exp(logvolmean+spread*logvolstdv)+"]\n");
+            logVolMean[obj] = (float)logvolmean;
+            logVolStdv[obj] = (float)logvolstdv;
         }   
+        
+        for (int obj=1;obj<nobj;obj++) {
+            System.out.print("Label "+obj+": log vol = "+logVolMean[obj]+" log stdv = "+logVolStdv[obj]+" -> "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]\n");
+        }   
+        objAvg = new double[nobj];
+        objDev = new double[nobj];
+        boundaryDev = new double[nobj];
         // Boundary statistics
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": boundary = "+avgbound[obj]+" +/- "+FastMath.sqrt(devbound[obj])+" (difference: "+FastMath.sqrt(devdiff[obj])+")\n");
+            objAvg[obj] = avgbound[obj];
+            objDev[obj] = devbound[obj];
+            boundaryDev[obj] = devdiff[obj];
         }   
-                
-        float[] prev = new float[nobj];
+        // Starting points
+        for (int obj=1;obj<nobj;obj++) {
+            System.out.print("Label "+obj+": start = "+start[obj]+" (score: "+bestscore[obj]+")\n");
+        }   
+    }
+    
+	public void conditionalPrecomputedVolumeGrowth(float spread) {
+	    // main idea: region growing from inside, until within volume prior
+	    // and a big enough difference in "certainty" score?
+	    
+		// find appropriate threshold to have correct volume; should use a fast marching approach!
+		BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeapPair.MAXTREE);
+		int[] labels = new int[ndata];
+        int[] start = new int[nobj];
         double[] vol = new double[nobj];
-        double[] bestvol = new double[nobj];
-        double[] bestproba = new double[nobj];
-        while (heap.isNotEmpty()) {
-            float score = heap.getFirst();
-            int xyz = heap.getFirstId();
-            byte obj = heap.getFirstState();
-            heap.removeFirst();
-            if (labels[idmap[xyz]]==0) {
-                //double volmean = objVolumeMean[obj];
-                //double volstdv = objVolumeStdv[obj];
-                
-                // use the number of subjects in posterior estimate?
-                double volmean = 0.9*objVolumeMean[obj]+0.1*voldata[obj];
-                double volstdv = FastMath.sqrt( 0.9*( Numerics.square(objVolumeStdv[obj])
-                                + 0.09*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-                // or treat prior and posterior equally?
-                /*
-                double volmean = 0.5*(objVolumeMean[obj]+voldata[obj]);
-                double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
-                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-                                */
-                // compute the joint probability function
-                double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
-                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
-                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
-                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj]);
-                
-                // find the proba, not the certainty
-                double proba = combinedProbas[0][idmap[xyz]];
-                if (combinedLabels[0][idmap[xyz]]!=obj) {
+        float[] bestscore = new float[nobj];
+		for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
+		int[][] nextbest = new int[nobj][ndata];
+		heap.reset();
+		
+		// first, find where then next objects probability is in the stack
+		for (int obj=1;obj<nobj;obj++) {
+		    for (int n=0;n<ndata;n++) {
+		        nextbest[obj][n] = 0;
+		        if (combinedLabels[0][n]>100*(obj+1) && combinedLabels[0][n]<100*(obj+2)) {
+		            // find the highest proba for a different structure
                     for (int b=1;b<nbest;b++) {
-                        if (combinedLabels[b][idmap[xyz]]==obj) {
-                            proba = combinedProbas[b][idmap[xyz]];
-                            b=nbest;
+                        if (combinedLabels[b][n]<100*(obj+1) || combinedLabels[b][n]>100*(obj+2)) {
+                            nextbest[obj][n] = b;
+                            b = nbest;
+                        }
+                    }
+                } else {
+                    // find the highest proba for current structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]>100*(obj+1) || combinedLabels[b][n]<100*(obj+2)) {
+                            nextbest[obj][n] = -b;
+                            b = nbest;
                         }
                     }
                 }
-                double pprob = FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                //double pstop = pvol*pdiff;
-                //double pstop = pvol*pcert*pprob;
-                //double pstop = pvol*pcert;
-                double pstop = pvol*pprob;
-                if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
-                    bestproba[obj] = pstop;
-                    bestvol[obj] = vol[obj];
+            }
+        }
+		// important: skip first label as background (allows for unbounded growth)
+        for (int obj=1;obj<nobj;obj++) {
+		    // find highest scoring voxel as starting point
+           for (int b=0;b<nbest;b++) {
+               for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                    int xyz=x+nx*y+nx*ny*z;
+                    if (mask[xyz]) {
+                        int id = idmap[xyz];
+                        if (combinedLabels[b][id]>100*(obj+1) && combinedLabels[b][id]<100*(obj+2)) {
+                        //if (combinedLabels[b][idmap[xyz]]==101*(obj+1)) {
+                            float score;
+                            if (b==0) score = combinedProbas[0][id]-combinedProbas[nextbest[obj][id]][id];
+                            else score = combinedProbas[b][id]-combinedProbas[0][id];
+                            //score = combinedProbas[b][idmap[xyz]];
+                            if (score>bestscore[obj]) {
+                                bestscore[obj] = score;
+                                start[obj] = xyz;
+                            }
+                        }
+                    }
                 }
+                if (bestscore[obj]>-INF) b = nbest;
+            }
+            // hardcode the starting points?
+            //heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            vol[obj]+= rx*ry*rz;
+            labels[idmap[start[obj]]] = obj;
+            for (byte k = 0; k<connectivity; k++) {
+                int ngb = Ngb.neighborIndex(k, start[obj], nx, ny, nz);
+                if (ngb>0 && ngb<nxyz && mask[ngb]) {
+                    if (labels[idmap[ngb]]==0) {
+                        for (int best=0;best<nbest;best++) {
+                            if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                best=nbest;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+                
+        float[] prev = new float[nobj];
+        double[] bestvol = new double[nobj];
+        double[] bestproba = new double[nobj];
+        for (int obj=0;obj<nobj;obj++) {
+            vol[obj] = 0.0;
+            bestvol[obj] = 0.0;
+            bestproba[obj] = 0.0;
+        }
+        while (heap.isNotEmpty()) {
+            float score = heap.getFirst();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
+            heap.removeFirst();
+            if (labels[idmap[xyz]]==0) {
+                int obj = Numerics.floor(obj1obj2/100)-1;
                 // update the values
                 vol[obj]+= rx*ry*rz;
                 labels[idmap[xyz]] = obj;
                 prev[obj] = score;
                 
+                // compute the joint probability function
+                double pvol = FastMath.exp(-0.5*(FastMath.log(Numerics.max(1.0,vol[obj]))-logVolMean[obj])
+                                               *(FastMath.log(Numerics.max(1.0,vol[obj]))-logVolMean[obj])
+                                               /Numerics.max(0.0001,(logVolStdv[obj]*logVolStdv[obj])));
+                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
+                /*
+                double pcert = 0.5;
+                for (int best=0;best<nbest;best++) {
+                    if (combinedLabels[best][idmap[xyz]]==obj1obj2) {
+                        pcert = FastMath.exp(-0.5*Numerics.square(combinedProbas[best][idmap[xyz]]-objAvg[obj])/objDev[obj]);
+                    }
+                }
+                */
+                //double pcert = FastMath.exp(-0.5*(score*score)/boundaryDev[obj]);
+                
+                //double pstop = pvol*pcert;
+                double pstop = pvol;
+                
+                if (pstop>bestproba[obj] && vol[obj]>=FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])) {
+                    bestproba[obj] = pstop;
+                    bestvol[obj] = vol[obj];
+                }
                 // run until the volume exceeds the mean volume + n*stdev
-                if (vol[obj]<volmean+spread*volstdv) {
+                if (vol[obj]<=FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])) {
                     // add neighbors
                     //for (byte k = 0; k<6; k++) {
-                    for (byte k = 0; k<26; k++) {
+                    for (byte k = 0; k<connectivity; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
                             if (mask[ngb]) {
                                 if (labels[idmap[ngb]]==0) {
                                     for (int best=0;best<nbest;best++) {
-                                        if (combinedLabels[best][idmap[ngb]]==obj) {
-                                            if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
-                                                //heap.addValue(combinedProbas[0][idmap[ngb]],ngb,obj);
-                                            } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
-                                                //heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
-                                            }
+                                        if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
                                             best=nbest;
                                         }
+                                        
                                     }
                                 }
                             }
@@ -2416,14 +2789,31 @@ public class ConditionalShapeSegmentation {
         }
         for(int id=0;id<ndata;id++) labels[id] = 0;
         for (int obj=1;obj<nobj;obj++) {
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
+            // hardcode the starting points?
+            //heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            vol[obj]+= rx*ry*rz;
+            labels[idmap[start[obj]]] = obj;
+            for (byte k = 0; k<connectivity; k++) {
+                int ngb = Ngb.neighborIndex(k, start[obj], nx, ny, nz);
+                if (ngb>0 && ngb<nxyz && mask[ngb]) {
+                    if (labels[idmap[ngb]]==0) {
+                        for (int best=0;best<nbest;best++) {
+                            if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                best=nbest;
+                            }
+                        }
+                    }
+                }
+            }
         }
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
-            int xyz = heap.getFirstId();
-            byte obj = heap.getFirstState();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
+                int obj = Numerics.floor(obj1obj2/100)-1;
                 if (vol[obj]<bestvol[obj]) {
                     // update the values
                     vol[obj]+=rx*ry*rz;
@@ -2431,22 +2821,17 @@ public class ConditionalShapeSegmentation {
                 
                     // add neighbors
                     //for (byte k = 0; k<6; k++) {
-                    for (byte k = 0; k<26; k++) {
+                    for (byte k = 0; k<connectivity; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                         if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
                             if (mask[ngb]) {
                                 if (labels[idmap[ngb]]==0) {
                                     for (int best=0;best<nbest;best++) {
-                                        if (combinedLabels[best][idmap[ngb]]==obj) {
-                                            if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj);
-                                                //heap.addValue(combinedProbas[0][idmap[ngb]],ngb,obj);
-                                            } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj);
-                                                //heap.addValue(combinedProbas[best][idmap[ngb]],ngb,obj);
-                                            }
+                                        if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
                                             best=nbest;
                                         }
+
                                     }
                                 }
                             }
@@ -2464,13 +2849,8 @@ public class ConditionalShapeSegmentation {
             if (mask[xyz]) {
                 int obj = labels[idmap[xyz]];
                 for (int best=0;best<nbest;best++) {
-                    if (combinedLabels[best][idmap[xyz]]==obj) {
-                        /*if (best==0) {
-                            finalProba[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        } else {
-                            finalProba[xyz] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
-                        }*/
-                        finalProba[xyz] = combinedProbas[best][idmap[xyz]];
+                    if (combinedLabels[best][idmap[xyz]]>100*(obj+1) && combinedLabels[best][idmap[xyz]]<100*(obj+2)) {
+                        finalProba[xyz] = Numerics.max(finalProba[xyz],combinedProbas[best][idmap[xyz]]);
                         best=nbest;
                     }
                 }
@@ -2479,6 +2859,7 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
+	
 	public void conditionalVolumeCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
@@ -2494,7 +2875,32 @@ public class ConditionalShapeSegmentation {
         double[] devbound = new double[nobj];
         double[] devdiff = new double[nobj];
         int[] nbound = new int[nobj];
+        int[][] nextbest = new int[nobj][ndata];
 		heap.reset();
+		
+		// first, find where then next objects probability is in the stack
+		for (int obj=1;obj<nobj;obj++) {
+		    for (int n=0;n<ndata;n++) {
+		        nextbest[obj][n] = 0;
+		        if (combinedLabels[0][n]>100*(obj+1) && combinedLabels[0][n]<100*(obj+2)) {
+		            // find the highest proba for a different structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]<100*(obj+1) || combinedLabels[b][n]>100*(obj+2)) {
+                            nextbest[obj][n] = b;
+                            b = nbest;
+                        }
+                    }
+                } else {
+                    // find the highest proba for current structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]>100*(obj+1) || combinedLabels[b][n]<100*(obj+2)) {
+                            nextbest[obj][n] = -b;
+                            b = nbest;
+                        }
+                    }
+                }
+            }
+        }
 		// important: skip first label as background (allows for unbounded growth)
         for (int obj=1;obj<nobj;obj++) {
 		    // find highest scoring voxel as starting point
@@ -2503,10 +2909,11 @@ public class ConditionalShapeSegmentation {
                     int xyz=x+nx*y+nx*ny*z;
                     if (mask[xyz]) {
                         int id = idmap[xyz];
-                        if (combinedLabels[b][idmap[xyz]]==101*(obj+1)) {
+                        if (combinedLabels[b][id]>100*(obj+1) && combinedLabels[b][id]<100*(obj+2)) {
+                        //if (combinedLabels[b][idmap[xyz]]==101*(obj+1)) {
                             float score;
-                            if (b==0) score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                            else score = combinedProbas[b][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
+                            if (b==0) score = combinedProbas[0][id]-combinedProbas[nextbest[obj][id]][id];
+                            else score = combinedProbas[b][id]-combinedProbas[0][id];
                             //score = combinedProbas[b][idmap[xyz]];
                             if (score>bestscore[obj]) {
                                 bestscore[obj] = score;
@@ -2552,8 +2959,15 @@ public class ConditionalShapeSegmentation {
                                 if (combinedLabels[0][idmap[ngb]]<100*(obj+1) || combinedLabels[0][idmap[ngb]]>100*(obj+2)) {
                                     devbound[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-avgbound[obj]);
                                     devbound[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-avgbound[obj]);
-                                    devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]);
-                                    devdiff[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
+                                    if (nextbest[obj][idmap[xyz]]>0)
+                                        devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[nextbest[obj][idmap[xyz]]][idmap[xyz]]);
+                                    else
+                                        devdiff[obj] += Numerics.square(combinedProbas[-nextbest[obj][idmap[xyz]]][idmap[xyz]]-combinedProbas[0][idmap[xyz]]);
+                                    if (nextbest[obj][idmap[ngb]]<0)
+                                        devdiff[obj] += Numerics.square(combinedProbas[-nextbest[obj][idmap[ngb]]][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
+                                    else
+                                        devdiff[obj] += Numerics.square(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]]);
+                                    
                                 }
                             }
                         }
@@ -2567,23 +2981,36 @@ public class ConditionalShapeSegmentation {
         }
         // Posterior volumes:
         for (int obj=1;obj<nobj;obj++) {
-            double volmean = 0.5*objVolumeMean[obj]+0.5*voldata[obj];
-            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
-                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-            System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
-            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
-            objVolumeMean[obj] = (float)volmean;
-            objVolumeStdv[obj] = (float)volstdv;
+            double logvolmean = 0.5*logVolMean[obj]+0.5*FastMath.log(Numerics.max(1.0,voldata[obj]));
+            double logvolstdv = FastMath.sqrt( 0.5*( Numerics.square(logVolStdv[obj])
+                                + 0.5*Numerics.square(logVolMean[obj]-FastMath.log(Numerics.max(1.0,voldata[obj]))) ) );
+            System.out.print("Label "+obj+": atlas volume = "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]");
+            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+FastMath.exp(logvolmean)+" ["+FastMath.exp(logvolmean-spread*logvolstdv)+", "+FastMath.exp(logvolmean+spread*logvolstdv)+"]\n");
+            logVolMean[obj] = (float)logvolmean;
+            logVolStdv[obj] = (float)logvolstdv;
+        }   
+        
+        for (int obj=1;obj<nobj;obj++) {
+            System.out.print("Label "+obj+": log vol = "+logVolMean[obj]+" log stdv = "+logVolStdv[obj]+" -> "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]\n");
         }   
         // Boundary statistics
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": boundary = "+avgbound[obj]+" +/- "+FastMath.sqrt(devbound[obj])+" (difference: "+FastMath.sqrt(devdiff[obj])+")\n");
+        }   
+        // Starting points
+        for (int obj=1;obj<nobj;obj++) {
+            System.out.print("Label "+obj+": start = "+start[obj]+" (score: "+bestscore[obj]+")\n");
         }   
                 
         float[] prev = new float[nobj];
         double[] vol = new double[nobj];
         double[] bestvol = new double[nobj];
         double[] bestproba = new double[nobj];
+        for (int obj=0;obj<nobj;obj++) {
+            vol[obj] = 0.0;
+            bestvol[obj] = 0.0;
+            bestproba[obj] = 0.0;
+        }
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
             int xyz = heap.getFirstId1();
@@ -2591,38 +3018,27 @@ public class ConditionalShapeSegmentation {
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
                 int obj = Numerics.floor(obj1obj2/100)-1;
-                // compute the joint probability function
-                double pvol = FastMath.exp(-0.5*(vol[obj]-objVolumeMean[obj])*(vol[obj]-objVolumeMean[obj])/(objVolumeStdv[obj]*objVolumeStdv[obj]));
-                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
-                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
-                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj]);
-                
-                // find the proba, not the certainty
-                double proba = combinedProbas[0][idmap[xyz]];
-                if (combinedLabels[0][idmap[xyz]]!=obj1obj2) {
-                    for (int b=1;b<nbest;b++) {
-                        if (combinedLabels[b][idmap[xyz]]==obj1obj2) {
-                            proba = combinedProbas[b][idmap[xyz]];
-                            b=nbest;
-                        }
-                    }
-                }
-                double pprob = FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                //double pstop = pvol*pcert*pprob;
-                double pstop = pvol*pprob;
-                
-                if (pstop>bestproba[obj] && vol[obj]>objVolumeMean[obj]-spread*objVolumeStdv[obj]) {
-                    bestproba[obj] = pstop;
-                    bestvol[obj] = vol[obj];
-                }
                 // update the values
                 vol[obj]+= rx*ry*rz;
                 labels[idmap[xyz]] = obj;
                 prev[obj] = score;
                 
+                // compute the joint probability function
+                double pvol = FastMath.exp(-0.5*(FastMath.log(Numerics.max(1.0,vol[obj]))-logVolMean[obj])
+                                               *(FastMath.log(Numerics.max(1.0,vol[obj]))-logVolMean[obj])
+                                               /Numerics.max(0.0001,(logVolStdv[obj]*logVolStdv[obj])));
+                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
+                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
+                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj]);
+                
+                double pstop = pvol*pcert;
+                
+                if (pstop>bestproba[obj] && vol[obj]>=FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])) {
+                    bestproba[obj] = pstop;
+                    bestvol[obj] = vol[obj];
+                }
                 // run until the volume exceeds the mean volume + n*stdev
-                if (vol[obj]<objVolumeMean[obj]+spread*objVolumeStdv[obj]) {
+                if (vol[obj]<=FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])) {
                     // add neighbors
                     //for (byte k = 0; k<6; k++) {
                     for (byte k = 0; k<26; k++) {
@@ -2631,24 +3047,52 @@ public class ConditionalShapeSegmentation {
                             if (mask[ngb]) {
                                 if (labels[idmap[ngb]]==0) {
                                     for (int best=0;best<nbest;best++) {
+                                        /*
                                         // same label
                                         if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
                                             if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj1obj2);
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
                                             } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
                                             }
                                             best=nbest;
                                         } else 
                                         // from object to conditional boundary label
                                         if (obj1obj2==101*(obj+1) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
                                             if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
                                             } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
+                                            best=nbest;
+                                        } else
+                                        // from conditional boundary to conditional boundary
+                                        if (obj1obj2>100*(obj+1) && obj1obj2<100*(obj+2) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
                                             }
                                             best=nbest;
                                         }
+                                        */
+                                        if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            best=nbest;
+                                        }
+                                        
                                     }
                                 }
                             }
@@ -2688,24 +3132,52 @@ public class ConditionalShapeSegmentation {
                             if (mask[ngb]) {
                                 if (labels[idmap[ngb]]==0) {
                                     for (int best=0;best<nbest;best++) {
+                                        /*
                                         // same label
                                         if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
                                             if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj1obj2);
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
                                             } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
                                             }
                                             best=nbest;
                                         } else 
                                         // from object to conditional boundary label
                                         if (obj1obj2==101*(obj+1) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
                                             if (best==0) {
-                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
                                             } else {
-                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
+                                            best=nbest;
+                                        } else
+                                        // from conditional boundary to conditional boundary
+                                        if (obj1obj2>100*(obj+1) && obj1obj2<100*(obj+2) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
                                             }
                                             best=nbest;
                                         }
+                                        */
+                                        if (combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[Numerics.max(0,nextbest[obj][idmap[ngb]])][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            best=nbest;
+                                        }
+
                                     }
                                 }
                             }
@@ -2724,11 +3196,6 @@ public class ConditionalShapeSegmentation {
                 int obj = labels[idmap[xyz]];
                 for (int best=0;best<nbest;best++) {
                     if (combinedLabels[best][idmap[xyz]]>100*(obj+1) && combinedLabels[best][idmap[xyz]]<100*(obj+2)) {
-                        /*if (best==0) {
-                            finalProba[xyz] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        } else {
-                            finalProba[xyz] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
-                        }*/
                         finalProba[xyz] = combinedProbas[best][idmap[xyz]];
                         best=nbest;
                     }
@@ -2738,31 +3205,79 @@ public class ConditionalShapeSegmentation {
         }
         return;            
 	}
-	
-	public void conditionalVolumeCertaintyGrowth(float spread) {
+		
+	public void conditionalBoundaryVolumeCertaintyThreshold(float spread) {
 	    // main idea: region growing from inside, until within volume prior
 	    // and a big enough difference in "certainty" score?
 	    
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
-		BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeapPair.MINTREE);
+		BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeapPair.MAXTREE);
 		int[] labels = new int[ndata];
         int[] start = new int[nobj];
         float[] bestscore = new float[nobj];
 		for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
 		double[] voldata = new double[nobj];
+		double[][] voldata2 = new double[nobj][nobj];
 		double[] avgbound = new double[nobj];
         double[] devbound = new double[nobj];
         double[] devdiff = new double[nobj];
         int[] nbound = new int[nobj];
+        int[][] nextbest = new int[nobj][ndata];
 		heap.reset();
+		
+		// first, find where then next objects probability is in the stack
+		for (int obj=1;obj<nobj;obj++) {
+		    for (int n=0;n<ndata;n++) {
+		        nextbest[obj][n] = 0;
+		        if (combinedLabels[0][n]>100*(obj+1) && combinedLabels[0][n]<100*(obj+2)) {
+		            // find the highest proba for a different structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]<100*(obj+1) || combinedLabels[b][n]>100*(obj+2)) {
+                            nextbest[obj][n] = b;
+                            b = nbest;
+                        }
+                    }
+                } else {
+                    // find the highest proba for current structure
+                    for (int b=1;b<nbest;b++) {
+                        if (combinedLabels[b][n]>100*(obj+1) || combinedLabels[b][n]<100*(obj+2)) {
+                            nextbest[obj][n] = -b;
+                            b = nbest;
+                        }
+                    }
+                }
+            }
+        }
 		// important: skip first label as background (allows for unbounded growth)
         for (int obj=1;obj<nobj;obj++) {
+		    // find highest scoring voxel as starting point
+           for (int b=0;b<nbest;b++) {
+               for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                    int xyz=x+nx*y+nx*ny*z;
+                    if (mask[xyz]) {
+                        int id = idmap[xyz];
+                        if (combinedLabels[b][id]>100*(obj+1) && combinedLabels[b][id]<100*(obj+2)) {
+                        //if (combinedLabels[b][idmap[xyz]]==101*(obj+1)) {
+                            float score;
+                            if (b==0) score = combinedProbas[0][id]-combinedProbas[nextbest[obj][id]][id];
+                            else score = combinedProbas[b][id]-combinedProbas[0][id];
+                            //score = combinedProbas[b][idmap[xyz]];
+                            if (score>bestscore[obj]) {
+                                bestscore[obj] = score;
+                                start[obj] = xyz;
+                            }
+                        }
+                    }
+                }
+                if (bestscore[obj]>-INF) b = nbest;
+            }
+            heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+            
             // boundary: mean difference
             for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
                 int xyz=x+nx*y+nx*ny*z;
                 if (mask[xyz]) {
                     if ((combinedLabels[0][idmap[xyz]]>100*(obj+1) && combinedLabels[0][idmap[xyz]]<100*(obj+2)) || start[obj]==xyz) {
-                        voldata[obj] += rx*ry*rz;
                         for (byte k = 0; k<26; k++) {
                             int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                             if (mask[ngb]) {
@@ -2790,8 +3305,15 @@ public class ConditionalShapeSegmentation {
                                 if (combinedLabels[0][idmap[ngb]]<100*(obj+1) || combinedLabels[0][idmap[ngb]]>100*(obj+2)) {
                                     devbound[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-avgbound[obj]);
                                     devbound[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-avgbound[obj]);
-                                    devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]);
-                                    devdiff[obj] += Numerics.square(combinedProbas[1][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
+                                    if (nextbest[obj][idmap[xyz]]>0)
+                                        devdiff[obj] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[nextbest[obj][idmap[xyz]]][idmap[xyz]]);
+                                    else
+                                        devdiff[obj] += Numerics.square(combinedProbas[-nextbest[obj][idmap[xyz]]][idmap[xyz]]-combinedProbas[0][idmap[xyz]]);
+                                    if (nextbest[obj][idmap[ngb]]<0)
+                                        devdiff[obj] += Numerics.square(combinedProbas[-nextbest[obj][idmap[ngb]]][idmap[ngb]]-combinedProbas[0][idmap[ngb]]);
+                                    else
+                                        devdiff[obj] += Numerics.square(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]]);
+                                    
                                 }
                             }
                         }
@@ -2803,49 +3325,62 @@ public class ConditionalShapeSegmentation {
                 devdiff[obj] /= (nbound[obj]-1.0);
             }
         }
+        // estimate voxel prior volumes
+        for (int obj1=1;obj1<nobj;obj1++) {
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz=x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    int id = idmap[xyz];
+                    if (combinedLabels[0][id]>100*(obj1+1) && combinedLabels[0][id]<100*(obj1+2)) {
+                        voldata[obj1] += rx*ry*rz;
+                    }
+                }
+            }
+        }
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz=x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    int id = idmap[xyz];
+                    if (combinedLabels[0][id]==100*(obj1+1)+(obj2+1)) {
+                        voldata2[obj1][obj2] += rx*ry*rz;
+                    }
+                }
+            }
+        }
+        
         // Posterior volumes:
         for (int obj=1;obj<nobj;obj++) {
-            double volmean = 0.5*objVolumeMean[obj]+0.5*voldata[obj];
-            double volstdv = FastMath.sqrt( 0.5*( Numerics.square(objVolumeStdv[obj])
-                                + 0.5*Numerics.square(objVolumeMean[obj]-voldata[obj]) ) );
-            System.out.print("Label "+obj+": atlas volume = "+objVolumeMean[obj]+" +/- "+objVolumeStdv[obj]);
-            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+volmean+" +/- "+volstdv+"\n");
-            objVolumeMean[obj] = (float)volmean;
-            objVolumeStdv[obj] = (float)volstdv;
+            double logvolmean = 0.5*logVolMean[obj]+0.5*FastMath.log(Numerics.max(1.0,voldata[obj]));
+            double logvolstdv = FastMath.sqrt( 0.5*( Numerics.square(logVolStdv[obj])
+                                + 0.5*Numerics.square(logVolMean[obj]-FastMath.log(Numerics.max(1.0,voldata[obj]))) ) );
+            System.out.print("Label "+obj+": atlas volume = "+FastMath.exp(logVolMean[obj])+" ["+FastMath.exp(logVolMean[obj]-spread*logVolStdv[obj])+", "+FastMath.exp(logVolMean[obj]+spread*logVolStdv[obj])+"]");
+            System.out.print(", data volume: "+voldata[obj]+" -> posterior volume = "+FastMath.exp(logvolmean)+" ["+FastMath.exp(logvolmean-spread*logvolstdv)+", "+FastMath.exp(logvolmean+spread*logvolstdv)+"]\n");
+            logVolMean[obj] = (float)logvolmean;
+            logVolStdv[obj] = (float)logvolstdv;
+        }
+        // Posterior volumes:
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            double logvolmean = 0.5*logVolMean2[obj1][obj2]+0.5*FastMath.log(Numerics.max(1.0,voldata2[obj1][obj2]));
+            double logvolstdv = FastMath.sqrt( 0.5*( Numerics.square(logVolStdv2[obj1][obj2])
+                                + 0.5*Numerics.square(logVolMean2[obj1][obj2]-FastMath.log(Numerics.max(1.0,voldata2[obj1][obj2]))) ) );
+            System.out.print("Label "+obj1+" | "+obj2+": atlas volume = "+FastMath.exp(logVolMean2[obj1][obj2])+" ["+FastMath.exp(logVolMean2[obj1][obj2]-spread*logVolStdv2[obj1][obj2])+", "+FastMath.exp(logVolMean2[obj1][obj2]+spread*logVolStdv2[obj1][obj2])+"]");
+            System.out.print(", data volume: "+voldata2[obj1][obj2]+" -> posterior volume = "+FastMath.exp(logvolmean)+" ["+FastMath.exp(logvolmean-spread*logvolstdv)+", "+FastMath.exp(logvolmean+spread*logvolstdv)+"]\n");
+            logVolMean2[obj1][obj2] = (float)logvolmean;
+            logVolStdv2[obj1][obj2] = (float)logvolstdv;
         }   
         // Boundary statistics
         for (int obj=1;obj<nobj;obj++) {
             System.out.print("Label "+obj+": boundary = "+avgbound[obj]+" +/- "+FastMath.sqrt(devbound[obj])+" (difference: "+FastMath.sqrt(devdiff[obj])+")\n");
         }   
-                
+        // Starting points
         for (int obj=1;obj<nobj;obj++) {
-            // find highest scoring voxel as starting point
-            for (int b=0;b<nbest;b++) {
-                for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
-                    int xyz=x+nx*y+nx*ny*z;
-                    if (mask[xyz]) {
-                        int id = idmap[xyz];
-                        if (combinedLabels[b][idmap[xyz]]==101*(obj+1)) {
-                            double proba = combinedProbas[b][idmap[xyz]];
-                            double pvol = 1.0/objVolumeStdv[obj]*FastMath.exp(-0.5*(objVolumeMean[obj])*(objVolumeMean[obj])/(objVolumeStdv[obj]*objVolumeStdv[obj]));
-                            double pprob = 1.0/devbound[obj]*FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
+            System.out.print("Label "+obj+": start = "+start[obj]+" (score: "+bestscore[obj]+")\n");
+        }   
                 
-                            float score = (float)(pvol*pprob);
-                           //score = combinedProbas[b][idmap[xyz]];
-                            if (score>bestscore[obj]) {
-                                bestscore[obj] = score;
-                                start[obj] = xyz;
-                            }
-                        }
-                    }
-                }
-                if (bestscore[obj]>-INF) b = nbest;
-            }
-            heap.addValue(bestscore[obj],start[obj],101*(obj+1));
-        }  
-
-        
+        float[] prev = new float[nobj];
         double[] vol = new double[nobj];
+        double[][] vol2 = new double[nobj][nobj];
         double[] bestvol = new double[nobj];
         double[] bestproba = new double[nobj];
         while (heap.isNotEmpty()) {
@@ -2854,35 +3389,32 @@ public class ConditionalShapeSegmentation {
             int obj1obj2 = heap.getFirstId2();
             heap.removeFirst();
             if (labels[idmap[xyz]]==0) {
-                int obj = Numerics.floor(obj1obj2/100)-1;
-                // compute the joint probability function
-                double pvol = 1.0/objVolumeStdv[obj]*FastMath.exp(-0.5*(vol[obj]-objVolumeMean[obj])*(vol[obj]-objVolumeMean[obj])/(objVolumeStdv[obj]*objVolumeStdv[obj]));
-                // find the proba, not the certainty
-                double proba = combinedProbas[0][idmap[xyz]];
-                if (combinedLabels[0][idmap[xyz]]!=obj1obj2) {
-                    for (int b=1;b<nbest;b++) {
-                        if (combinedLabels[b][idmap[xyz]]==obj1obj2) {
-                            proba = combinedProbas[b][idmap[xyz]];
-                            b=nbest;
-                        }
-                    }
-                }
-                double pprob = 1.0/devbound[obj]*FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                double pstop = pvol*pprob;
-                
-                if (pstop>bestproba[obj] && vol[obj]>objVolumeMean[obj]-spread*objVolumeStdv[obj]) {
-                    bestproba[obj] = pstop;
-                    bestvol[obj] = vol[obj];
-                }
+                int obj1 = Numerics.floor(obj1obj2/100)-1;
+                int obj2 = obj1obj2 - 100*(obj1+1) - 1;
                 // update the values
-                vol[obj]+= rx*ry*rz;
-                labels[idmap[xyz]] = obj;
+                vol[obj1]+= rx*ry*rz;
+                vol2[obj1][obj2] += rx*ry*rz;
+                labels[idmap[xyz]] = obj1;
+                prev[obj1] = score;
                 
+                // compute the joint probability function
+                double pvol = 1.0;
+                for (int obj=0;obj<nobj;obj++) if (logVolMean2[obj1][obj]>0) {
+                    pvol *= FastMath.exp(-0.5*(FastMath.log(Numerics.max(1.0,vol2[obj1][obj]))-logVolMean2[obj1][obj])
+                                               *(FastMath.log(Numerics.max(1.0,vol2[obj1][obj]))-logVolMean2[obj1][obj])
+                                               /Numerics.max(0.0001,(logVolStdv2[obj1][obj]*logVolStdv2[obj1][obj])));
+                }
+                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj1]);
+                
+                double pstop = pvol*pcert;
+                
+                if (pstop>bestproba[obj1] && vol[obj1]>FastMath.exp(logVolMean[obj1]-spread*logVolStdv[obj1])) {
+                    bestproba[obj1] = pstop;
+                    bestvol[obj1] = vol[obj1];
+                }
                 // run until the volume exceeds the mean volume + n*stdev
-                if (vol[obj]<objVolumeMean[obj]+spread*objVolumeStdv[obj]) {
-                    pvol = 1.0/objVolumeStdv[obj]*FastMath.exp(-0.5*(vol[obj]-objVolumeMean[obj])*(vol[obj]-objVolumeMean[obj])/(objVolumeStdv[obj]*objVolumeStdv[obj]));
-                    /// add neighbors
+                if (vol[obj1]<FastMath.exp(logVolMean[obj1]+spread*logVolStdv[obj1])) {
+                    // add neighbors
                     //for (byte k = 0; k<6; k++) {
                     for (byte k = 0; k<26; k++) {
                         int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
@@ -2892,18 +3424,41 @@ public class ConditionalShapeSegmentation {
                                     for (int best=0;best<nbest;best++) {
                                         // same label
                                         if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
-                                            proba = combinedProbas[best][idmap[ngb]];
-                                            pprob = 1.0/devbound[obj]*FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                                            heap.addValue((float)(score+pvol*pprob),ngb,obj1obj2);
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj1][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
+                                            } else {
+                                                if (nextbest[obj1][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj1][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
                                             best=nbest;
                                         } else 
                                         // from object to conditional boundary label
-                                        if (obj1obj2==101*(obj+1) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
-                                            proba = combinedProbas[best][idmap[ngb]];
-                                            pprob = 1.0/devbound[obj]*FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                                            heap.addValue((float)(score+pvol*pprob),ngb,obj1obj2);
+                                        if (obj1obj2==101*(obj1+1) && combinedLabels[best][idmap[ngb]]>100*(obj1+1) && combinedLabels[best][idmap[ngb]]<100*(obj1+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj1][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                if (nextbest[obj1][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj1][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
+                                            best=nbest;
+                                        } else
+                                        // from conditional boundary to conditional boundary
+                                        if (obj1obj2>100*(obj1+1) && obj1obj2<100*(obj1+2) && combinedLabels[best][idmap[ngb]]>100*(obj1+1) && combinedLabels[best][idmap[ngb]]<100*(obj1+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj1][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                if (nextbest[obj1][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj1][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
                                             best=nbest;
                                         }
                                     }
@@ -2937,7 +3492,6 @@ public class ConditionalShapeSegmentation {
                     vol[obj]+=rx*ry*rz;
                     labels[idmap[xyz]] = obj;
                 
-                    double pvol = 1.0/objVolumeStdv[obj]*FastMath.exp(-0.5*(vol[obj]-objVolumeMean[obj])*(vol[obj]-objVolumeMean[obj])/(objVolumeStdv[obj]*objVolumeStdv[obj]));
                     // add neighbors
                     //for (byte k = 0; k<6; k++) {
                     for (byte k = 0; k<26; k++) {
@@ -2948,18 +3502,41 @@ public class ConditionalShapeSegmentation {
                                     for (int best=0;best<nbest;best++) {
                                         // same label
                                         if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
-                                            double proba = combinedProbas[best][idmap[ngb]];
-                                            double pprob = 1.0/devbound[obj]*FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                                            heap.addValue((float)(score+pvol*pprob),ngb,obj1obj2);
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
+                                            } else {
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,obj1obj2);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
                                             best=nbest;
                                         } else 
                                         // from object to conditional boundary label
                                         if (obj1obj2==101*(obj+1) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
-                                            double proba = combinedProbas[best][idmap[ngb]];
-                                            double pprob = 1.0/devbound[obj]*FastMath.exp(-0.5*(proba-avgbound[obj])*(proba-avgbound[obj])/devbound[obj]);
-                
-                                            heap.addValue((float)(score+pvol*pprob),ngb,obj1obj2);
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
+                                            best=nbest;
+                                        } else
+                                        // from conditional boundary to conditional boundary
+                                        if (obj1obj2>100*(obj+1) && obj1obj2<100*(obj+2) && combinedLabels[best][idmap[ngb]]>100*(obj+1) && combinedLabels[best][idmap[ngb]]<100*(obj+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                if (nextbest[obj][idmap[ngb]]>0) {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[nextbest[obj][idmap[ngb]]][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                                } else {
+                                                    heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                                }
+                                            }
                                             best=nbest;
                                         }
                                     }
@@ -2995,136 +3572,141 @@ public class ConditionalShapeSegmentation {
         return;            
 	}
 	
-	public void mappedOptimalVolumeCertaintyThreshold(float spread) {
+	public void conditionalBoundaryGrowth(float spread) {
 	    // main idea: region growing from inside, until within volume prior
-	    // and a "certainty" close to posterior
+	    // and a big enough difference in "certainty" score?
 	    
-	    // using a coordinate mapping to output the result from atlas to subject space
-	    
-	    // compute the structure-specific volume scaling factors
-        float[] atlasVol = new float[nobj];
-        for (int xyz=0;xyz<naxyz;xyz++) if (mask[xyz]) {
-            int obj = Numerics.floor(spatialLabels[0][idmap[xyz]]/100.0f);
-            atlasVol[obj-1] += rax*ray*raz;
-        }
-        float[] mappedVol = new float[nobj];
-        for (int idx=0;idx<ntxyz;idx++) {
-            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-            if (mask[xyz]) {
-                int obj = Numerics.floor(spatialLabels[0][idmap[xyz]]/100.0f);
-                mappedVol[obj-1] += rtx*rty*rtz;
-            }
-        }
-        System.out.print("volume ratios: ");
-        for (int obj=0;obj<nobj;obj++) System.out.print(obj+": "+(mappedVol[obj]/atlasVol[obj])+", ");
-        System.out.println("(m/a)");
-        // adjust the volume priors
-        for (int obj=0;obj<nobj;obj++) {
-            objVolumeMean[obj] *= mappedVol[obj]/atlasVol[obj];
-            objVolumeStdv[obj] *= mappedVol[obj]/atlasVol[obj];
-        }
-            
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
-		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
-		int[] labels = new int[ntxyz];
-        int[] start = new int[nobj];
-        float[] bestscore = new float[nobj];
-        double[] dev = new double[nobj];
-        int[] ndev = new int[nobj];
-		heap.reset();
+		BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeapPair.MAXTREE);
+		int[] labels = new int[ndata];
+        int[][] start = new int[nobj][nobj];
+        float[][] bestscore = new float[nobj][nobj];
+		for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) bestscore[obj1][obj2] = -INF;
+		double[][] voldata = new double[nobj][nobj];
+		double[][] devdiff = new double[nobj][nobj];
+        int[][] nbound = new int[nobj][nobj];
+        heap.reset();
+		
 		// important: skip first label as background (allows for unbounded growth)
-        for (int obj=1;obj<nobj;obj++) {
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
 		    // find highest scoring voxel as starting point
-            for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
-                int idx = x+ntx*y+ntx*nty*z;
-                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-                if (mask[xyz]) {
-                    if (combinedLabels[0][idmap[xyz]]==obj) {
-                        float score;
-                        score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        
-                        if (score>bestscore[obj]) {
-                            bestscore[obj] = score;
-                            start[obj] = idx;
+           for (int b=0;b<nbest;b++) {
+               for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                    int xyz=x+nx*y+nx*ny*z;
+                    if (mask[xyz]) {
+                        int id = idmap[xyz];
+                        if (combinedLabels[b][id]==100*(obj1+1)+(obj2+1)) {
+                            float score;
+                            if (b==0) score = combinedProbas[0][id]-combinedProbas[1][id];
+                            else score = combinedProbas[b][id]-combinedProbas[0][id];
+                            //score = combinedProbas[b][idmap[xyz]];
+                            if (score>bestscore[obj1][obj2]) {
+                                bestscore[obj1][obj2] = score;
+                                start[obj1][obj2] = xyz;
+                            }
+                            if (b==0) voldata[obj1][obj2] += rx*ry*rz;
                         }
-                        
-                        // check if boundary
-                        boolean isboundary=false;
+                    }
+                }
+                if (bestscore[obj1][obj2]>-INF) b = nbest;
+            }
+            heap.addValue(bestscore[obj1][obj2],start[obj1][obj2],100*(obj1+1)+(obj2+1));
+            
+            // boundary: mean difference
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz=x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    if ( (combinedLabels[0][idmap[xyz]]==100*(obj1+1)+(obj2+1) ) || start[obj1][obj2]==xyz) {
                         for (byte k = 0; k<26; k++) {
-                            int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                            int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
-                                    + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
-                                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
+                            int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
                             if (mask[ngb]) {
-                                if (combinedLabels[0][idmap[ngb]]!=obj) {
-                                    isboundary = true;
-                                    k=26;
+                                // also measure the neighbors' values -> count every pair (values may be used multiple times,
+                                // but the number of samples is equal for inside and outside)
+                                if (combinedLabels[0][idmap[ngb]]!=100*(obj1+1)+(obj2+1) ) {
+                                    devdiff[obj1][obj2] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]);
+                                    devdiff[obj1][obj2] += Numerics.square(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]]);
+                                    nbound[obj1][obj2] += 2;
                                 }
                             }
-                        }
-                        if (isboundary) {
-                            dev[obj] += score*score;
-                            ndev[obj]++;
                         }
                     }
                 }
             }
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
-            dev[obj] /= (double)ndev[obj];
+            if (nbound[obj1][obj2]>1) {
+                devdiff[obj1][obj2] /= (nbound[obj1][obj2]-1.0);
+            }
         }
-        float[] prev = new float[nobj];
-        double[] vol = new double[nobj];
-        double[] bestvol = new double[nobj];
-        double[] bestproba = new double[nobj];
+        //just in case: propagate the difference from object anything else to empty values
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            if (devdiff[obj1][obj2]==0) {
+                devdiff[obj1][obj2] = devdiff[obj1][obj1];       
+            }
+        }
+        // Posterior volumes:
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            double logvolmean = 0.5*logVolMean2[obj1][obj2]+0.5*FastMath.log(Numerics.max(1.0,voldata[obj1][obj2]));
+            double logvolstdv = FastMath.sqrt( 0.5*( Numerics.square(logVolStdv2[obj1][obj2])
+                                + 0.5*Numerics.square(logVolMean2[obj1][obj2]-FastMath.log(Numerics.max(1.0,voldata[obj1][obj2]))) ) );
+            System.out.print("Label "+obj1+" | "+obj2+": atlas volume = "+FastMath.exp(logVolMean2[obj1][obj2])+" ["+FastMath.exp(logVolMean2[obj1][obj2]-logVolStdv2[obj1][obj2])+", "+FastMath.exp(logVolMean2[obj1][obj2]+logVolStdv2[obj1][obj2])+"]");
+            System.out.print(", data volume: "+voldata[obj1][obj2]+" -> posterior volume = "+FastMath.exp(logvolmean)+" ["+FastMath.exp(logvolmean-logvolstdv)+", "+FastMath.exp(logvolmean+logvolstdv)+"]\n");
+            logVolMean2[obj1][obj2] = (float)logvolmean;
+            logVolStdv2[obj1][obj2] = (float)logvolstdv;
+        }   
+        // Boundary statistics
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            System.out.print("Label "+obj1+" | "+obj2+": boundary = "+FastMath.sqrt(devdiff[obj1][obj2])+")\n");
+        }   
+                
+        float[][] prev = new float[nobj][nobj];
+        double[][] vol = new double[nobj][nobj];
+        double[][] bestvol = new double[nobj][nobj];
+        double[][] bestproba = new double[nobj][nobj];
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
-            int idx = heap.getFirstId();
-            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-            byte obj = heap.getFirstState();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
             heap.removeFirst();
-            if (labels[idx]==0) {
-                double volmean = objVolumeMean[obj];
-                double volstdv = objVolumeStdv[obj];
-                // compute the joint probability function
-                double pvol = FastMath.exp(-0.5*(vol[obj]-volmean)*(vol[obj]-volmean)/(volstdv*volstdv));
-                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
-                double pcert = FastMath.exp(-0.5*(score*score)/dev[obj]);
-                
-                //double pstop = pvol*pdiff;
-                double pstop = pvol*pcert;
-                if (pstop>bestproba[obj] && vol[obj]>volmean-spread*volstdv) {
-                    bestproba[obj] = pstop;
-                    bestvol[obj] = vol[obj];
-                }
+            if (labels[idmap[xyz]]==0) {
+                int obj1 = Numerics.floor(obj1obj2/100)-1;
+                int obj2 = obj1obj2 - 100*(obj1+1) - 1;
                 // update the values
-                vol[obj] += rtx*rty*rtz;
-                labels[idx] = obj;
-                prev[obj] = score;
+                vol[obj1][obj2] += rx*ry*rz;
+                labels[idmap[xyz]] = 100*(obj1+1)+(obj2+1);
+                prev[obj1][obj2] = score;
                 
+                // compute the joint probability function
+                double pvol = FastMath.exp(-0.5*(FastMath.log(Numerics.max(1.0,vol[obj1][obj2]))-logVolMean2[obj1][obj2])
+                                               *(FastMath.log(Numerics.max(1.0,vol[obj1][obj2]))-logVolMean2[obj1][obj2])
+                                               /Numerics.max(0.0001,(logVolStdv2[obj1][obj2]*logVolStdv2[obj1][obj2])));
+                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
+                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
+                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj1][obj2]);
+                
+                double pstop = pvol*pcert;
+                
+                if (pstop>bestproba[obj1][obj2] && vol[obj1][obj2]>FastMath.exp(logVolMean2[obj1][obj2]-spread*logVolStdv2[obj1][obj2])) {
+                    bestproba[obj1][obj2] = pstop;
+                    bestvol[obj1][obj2] = vol[obj1][obj2];
+                }
                 // run until the volume exceeds the mean volume + n*stdev
-                if (vol[obj]<volmean+spread*volstdv) {
+                if (vol[obj1][obj2]<FastMath.exp(logVolMean2[obj1][obj2]+spread*logVolStdv2[obj1][obj2])) {
                     // add neighbors
-                    for (byte k = 0; k<6; k++) {
-                        int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                        int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
-                                + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
-                                + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
-                        if (mask[ngb]) {
-                            if (labels[idn]==0) {
-                                for (int best=0;best<nbest;best++) {
-                                    if (combinedLabels[best][idmap[ngb]]==obj) {
-                                        if (best==0) {
-                                            heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],idn,obj);
-                                        } else {
-                                            heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],idn,obj);
+                    //for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        // same label
+                                        if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj1obj2);
+                                            } else {
+                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                            }
+                                            best=nbest;
                                         }
-                                        best=nbest;
                                     }
                                 }
                             }
@@ -3133,207 +3715,334 @@ public class ConditionalShapeSegmentation {
                 }
             }
         }
-        System.out.println("Average volumes: ");
-        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+objVolumeMean[obj]+" ("+objVolumeStdv[obj]+") ");
         System.out.println("\nOptimized volumes: ");
-        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) System.out.println(obj1+" | "+obj2+": "+bestvol[obj1][obj2]+" ("+bestproba[obj1][obj2]+") ");
         // re-run one last time to get the segmentation
         heap.reset();
-        for (int obj=0;obj<nobj;obj++) {
-            vol[obj] = 0.0;
+        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            vol[obj1][obj2] = 0.0;
         }
-        for(int id=0;id<ntxyz;id++) labels[id] = 0;
-        for (int obj=1;obj<nobj;obj++) {
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
+        for(int id=0;id<ndata;id++) labels[id] = 0;
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            heap.addValue(bestscore[obj1][obj2],start[obj1][obj2],100*(obj1+1)+(obj2+1));
         }
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
-            int idx = heap.getFirstId();
-            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-            byte obj = heap.getFirstState();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
             heap.removeFirst();
-            if (labels[idx]==0) {
-                if (vol[obj]<bestvol[obj]) {
+            if (labels[idmap[xyz]]==0) {
+                int obj1 = Numerics.floor(obj1obj2/100)-1;
+                int obj2 = obj1obj2 - 100*(obj1+1) - 1;
+                if (vol[obj1][obj2]<bestvol[obj1][obj2]) {
                     // update the values
-                    vol[obj] += rtx*rty*rtz;
-                    labels[idx] = obj;
+                    vol[obj1][obj2]+=rx*ry*rz;
+                    labels[idmap[xyz]] = obj1obj2;
                 
                     // add neighbors
-                    for (byte k = 0; k<6; k++) {
-                        int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                        int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
-                                + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
-                                + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
-                        if (mask[ngb]) {
-                            if (labels[idn]==0) {
-                                for (int best=0;best<nbest;best++) {
-                                    if (combinedLabels[best][idmap[ngb]]==obj) {
-                                        if (best==0) {
-                                            heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],idn,obj);
-                                        } else {
-                                            heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],idn,obj);
+                    //for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        // same label
+                                        if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj1obj2);
+                                            } else {
+                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                            }
+                                            best=nbest;
                                         }
-                                        best=nbest;
                                     }
                                 }
-                            }  
+                            }
                         }
                     }
                 }
             }
         }
-        // final segmentation: collapse on a single dimension
-        finalLabel = labels;
-        finalProba = new float[ntxyz];
-        
+        // final segmentation: collapse onto result images
+        finalLabel = new int[nxyz];
+        finalProba = new float[nxyz];
         float[] kept = new float[nobj];
         for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
-            int idx = x+ntx*y+ntx*nty*z;
-            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+            int xyz = x+ntx*y+ntx*nty*z;
             if (mask[xyz]) {
-                int obj = labels[idx];
+                // fill in the background
+                if (labels[idmap[xyz]]==0) labels[idmap[xyz]] = 101;
+                int obj = Numerics.floor(labels[idmap[xyz]]/100)-1;
                 for (int best=0;best<nbest;best++) {
-                    if (combinedLabels[best][idmap[xyz]]==obj) {
-                        if (best==0) {
-                            finalProba[idx] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        } else {
-                            finalProba[idx] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
-                        }
+                    if (combinedLabels[best][idmap[xyz]]==labels[idmap[xyz]]) {
+                    //if (combinedLabels[best][idmap[xyz]]>100*(obj+1) && combinedLabels[best][idmap[xyz]]<100*(obj+2)) {
+                        finalProba[xyz] = combinedProbas[best][idmap[xyz]];
                         best=nbest;
                     }
                 }
+                finalLabel[xyz] = obj;
             }
         }
         return;            
 	}
-
-	/*
-	public void mappedOptimalCertaintyThreshold(float spread) {
+		
+	public void conditionalObjectBoundaryGrowth(float spread) {
 	    // main idea: region growing from inside, until within volume prior
-	    // and a "certainty" close to posterior
-	    
-	    // using a coordinate mapping to output the result from atlas to subject space
+	    // and a big enough difference in "certainty" score?
 	    
 		// find appropriate threshold to have correct volume; should use a fast marching approach!
-		BinaryHeap2D	heap = new BinaryHeap2D(nx*ny+ny*nz+nz*nx, BinaryHeap4D.MAXTREE);
-		int[] labels = new int[ntxyz];
+		BinaryHeapPair	heap = new BinaryHeapPair(nx*ny+ny*nz+nz*nx, BinaryHeapPair.MAXTREE);
+		int[] labels = new int[ndata];
         int[] start = new int[nobj];
         float[] bestscore = new float[nobj];
-        double[] dev = new double[nobj];
-        int[] ndev = new int[nobj];
-		heap.reset();
+		for (int obj=1;obj<nobj;obj++) bestscore[obj] = -INF;
+		double[][] voldata = new double[nobj][nobj];
+		double[][] devdiff = new double[nobj][nobj];
+        int[][] nbound = new int[nobj][nobj];
+        heap.reset();
+		
 		// important: skip first label as background (allows for unbounded growth)
         for (int obj=1;obj<nobj;obj++) {
 		    // find highest scoring voxel as starting point
-            for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
-                int idx = x+ntx*y+ntx*nty*z;
-                int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                        + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                        + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-                if (mask[xyz]) {
-                    if (combinedLabels[0][idmap[xyz]]==obj) {
-                        float score;
-                        score = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        
-                        if (score>bestscore[obj]) {
-                            bestscore[obj] = score;
-                            start[obj] = idx;
-                        }
-                        
-                        // check if boundary
-                        boolean isboundary=false;
-                        for (byte k = 0; k<26; k++) {
-                            int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                            int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
-                                    + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
-                                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
-                            if (mask[ngb]) {
-                                if (combinedLabels[0][idmap[ngb]]!=obj) {
-                                    isboundary = true;
-                                    k=26;
-                                }
+           for (int b=0;b<nbest;b++) {
+               for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                    int xyz=x+nx*y+nx*ny*z;
+                    if (mask[xyz]) {
+                        int id = idmap[xyz];
+                        if (combinedLabels[b][id]==101*(obj+1)) {
+                            float score;
+                            if (b==0) score = combinedProbas[0][id]-combinedProbas[1][id];
+                            else score = combinedProbas[b][id]-combinedProbas[0][id];
+                            //score = combinedProbas[b][idmap[xyz]];
+                            if (score>bestscore[obj]) {
+                                bestscore[obj] = score;
+                                start[obj] = xyz;
                             }
                         }
-                        if (isboundary) {
-                            dev[obj] += score*score;
-                            ndev[obj]++;
+                    }
+                }
+                if (bestscore[obj]>-INF) b = nbest;
+            }
+            heap.addValue(bestscore[obj],start[obj],101*(obj+1));
+        }
+
+        // estimate voxel prior volumes
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz=x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    int id = idmap[xyz];
+                    if (combinedLabels[0][id]==100*(obj1+1)+(obj2+1)) {
+                        voldata[obj1][obj2] += rx*ry*rz;
+                    }
+                }
+            }
+        }
+        
+        // boundary: mean difference
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            for (int x=1;x<nx-1;x++) for (int y=1;y<ny-1;y++) for (int z=1;z<nz-1;z++) {
+                int xyz=x+nx*y+nx*ny*z;
+                if (mask[xyz]) {
+                    if ( (combinedLabels[0][idmap[xyz]]==100*(obj1+1)+(obj2+1) ) || start[obj1]==xyz) {
+                        for (byte k = 0; k<26; k++) {
+                            int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                            if (mask[ngb]) {
+                                // also measure the neighbors' values -> count every pair (values may be used multiple times,
+                                // but the number of samples is equal for inside and outside)
+                                if (combinedLabels[0][idmap[ngb]]!=100*(obj1+1)+(obj2+1) ) {
+                                    devdiff[obj1][obj2] += Numerics.square(combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]]);
+                                    devdiff[obj1][obj2] += Numerics.square(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]]);
+                                    nbound[obj1][obj2] += 2;
+                                }
+                            }
                         }
                     }
                 }
             }
-            heap.addValue(bestscore[obj],start[obj],(byte)obj);
-            dev[obj] /= (double)ndev[obj];
+            if (nbound[obj1][obj2]>1) {
+                devdiff[obj1][obj2] /= (nbound[obj1][obj2]-1.0);
+            }
         }
-        float[] prev = new float[nobj];
-        double[] vol = new double[nobj];
+        //just in case: propagate the difference from object anything else to empty values
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            if (devdiff[obj1][obj2]==0) {
+                devdiff[obj1][obj2] = devdiff[obj1][obj1];       
+            }
+        }
+        
+        // Posterior volumes:
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            double logvolmean = 0.5*logVolMean2[obj1][obj2]+0.5*FastMath.log(Numerics.max(1.0,voldata[obj1][obj2]));
+            double logvolstdv = FastMath.sqrt( 0.5*( Numerics.square(logVolStdv2[obj1][obj2])
+                                + 0.5*Numerics.square(logVolMean2[obj1][obj2]-FastMath.log(Numerics.max(1.0,voldata[obj1][obj2]))) ) );
+            System.out.print("Label "+obj1+" | "+obj2+": atlas volume = "+FastMath.exp(logVolMean2[obj1][obj2])+" ["+FastMath.exp(logVolMean2[obj1][obj2]-logVolStdv2[obj1][obj2])+", "+FastMath.exp(logVolMean2[obj1][obj2]+logVolStdv2[obj1][obj2])+"]");
+            System.out.print(", data volume: "+voldata[obj1][obj2]+" -> posterior volume = "+FastMath.exp(logvolmean)+" ["+FastMath.exp(logvolmean-logvolstdv)+", "+FastMath.exp(logvolmean+logvolstdv)+"]\n");
+            logVolMean2[obj1][obj2] = (float)logvolmean;
+            logVolStdv2[obj1][obj2] = (float)logvolstdv;
+        }   
+        // Boundary statistics
+        for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            System.out.print("Label "+obj1+" | "+obj2+": boundary = "+FastMath.sqrt(devdiff[obj1][obj2])+")\n");
+        }   
+                
+        float[][] prev = new float[nobj][nobj];
+        double[][] vol = new double[nobj][nobj];
         double[] bestvol = new double[nobj];
         double[] bestproba = new double[nobj];
         while (heap.isNotEmpty()) {
             float score = heap.getFirst();
-            int idx = heap.getFirstId();
-            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
-            byte obj = heap.getFirstState();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
             heap.removeFirst();
-            if (labels[idx]==0) {
-                if (vol[obj]<bestvol[obj]) {
-                    // update the values
-                    vol[obj] += rtx*rty*rtz;
-                    labels[idx] = obj;
+            if (labels[idmap[xyz]]==0) {
+                int obj1 = Numerics.floor(obj1obj2/100)-1;
+                int obj2 = obj1obj2 - 100*(obj1+1) - 1;
+                // update volume before computing the probability
+                vol[obj1][obj2] += rx*ry*rz;
+                labels[idmap[xyz]] = 100*(obj1+1)+(obj2+1);
+                prev[obj1][obj2] = score;
                 
+                // compute the joint probability function for the boundary or the whole object?
+                double pvol = 1.0;
+                for (int obj=0;obj<nobj;obj++) if (logVolMean2[obj1][obj]>0) {
+                    pvol *= FastMath.exp(-0.5*(FastMath.log(Numerics.max(1.0,vol[obj1][obj]))-logVolMean2[obj1][obj])
+                                               *(FastMath.log(Numerics.max(1.0,vol[obj1][obj]))-logVolMean2[obj1][obj])
+                                               /Numerics.max(0.0001,(logVolStdv2[obj1][obj]*logVolStdv2[obj1][obj])));
+                }
+                //double pvol = FastMath.exp(-0.5*(FastMath.log(Numerics.max(1.0,vol[obj1][obj2])-logVolMean2[obj1][obj2])
+                //                               *(FastMath.log(Numerics.max(1.0,vol[obj1][obj2])-logVolMean2[obj1][obj2])
+                //                               /Numerics.max(0.0001,(logVolStdv2[obj1][obj2]*logVolStdv2[obj1][obj2])));
+                //double pdiff = 1.0-FastMath.exp(-0.5*(score-prev[obj])*(score-prev[obj])/(scale*scale));
+                //double pcert = FastMath.exp(-0.5*(score-avgbound[obj])*(score-avgbound[obj])/devbound[obj]);
+                double pcert = FastMath.exp(-0.5*(score*score)/devdiff[obj1][obj2]);
+                
+                double pstop = pvol*pcert;
+                
+                if (pstop>bestproba[obj1] && vol[obj1][obj2]>FastMath.exp(logVolMean2[obj1][obj2]-spread*logVolStdv2[obj1][obj2])) {
+                    bestproba[obj1] = pstop;
+                    bestvol[obj1] = 0.0f;
+                    for (int obj=0;obj<nobj;obj++) bestvol[obj1] += vol[obj1][obj];
+                }
+                // update the values
+                
+                // run until the volume exceeds the mean volume + n*stdev
+                if (vol[obj1][obj2]<FastMath.exp(logVolMean2[obj1][obj2]+spread*logVolStdv2[obj1][obj2])) {
                     // add neighbors
-                    for (byte k = 0; k<6; k++) {
-                        int idn = Ngb.neighborIndex(k, idx, ntx, nty, ntz);
-                        int ngb = Numerics.bounded(Numerics.round(map2target[idn]),0,nx-1)
-                                + nx*Numerics.bounded(Numerics.round(map2target[idn+ntxyz]),0,ny-1)
-                                + nx*ny*Numerics.bounded(Numerics.round(map2target[idn+2*ntxyz]),0,nz-1);
-                        if (mask[ngb]) {
-                            if (labels[idn]==0) {
-                                for (int best=0;best<nbest;best++) {
-                                    if (combinedLabels[best][idmap[ngb]]==obj) {
-                                        if (best==0) {
-                                            heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],idn,obj);
+                    //for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        // same label
+                                        if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj1obj2);
+                                            } else {
+                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                            }
+                                            best=nbest;
+                                        // boundary labels    
+                                        } else if (combinedLabels[best][idmap[ngb]]>100*(obj1+1) && combinedLabels[best][idmap[ngb]]<100*(obj1+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            }
+                                            best=nbest;
                                         }
-                                        best=nbest;
                                     }
                                 }
-                            }  
+                            }
                         }
                     }
                 }
             }
         }
-        // final segmentation: collapse on a single dimension
-        finalLabel = labels;
-        finalProba = new float[ntxyz];
-        
+        System.out.println("\nOptimized volumes: ");
+        //for (int obj1=1;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) System.out.println(obj1+" | "+obj2+": "+bestvol[obj1][obj2]+" ("+bestproba[obj1][obj2]+") ");
+        for (int obj=1;obj<nobj;obj++) System.out.println(obj+": "+bestvol[obj]+" ("+bestproba[obj]+") ");
+        // re-run one last time to get the segmentation
+        heap.reset();
+        for (int obj1=0;obj1<nobj;obj1++) for (int obj2=0;obj2<nobj;obj2++) {
+            vol[obj1][obj2] = 0.0;
+        }
+        for(int id=0;id<ndata;id++) labels[id] = 0;
+        for (int obj1=1;obj1<nobj;obj1++) {
+            heap.addValue(bestscore[obj1],start[obj1],100*(obj1+1)+(obj1+1));
+        }
+        while (heap.isNotEmpty()) {
+            float score = heap.getFirst();
+            int xyz = heap.getFirstId1();
+            int obj1obj2 = heap.getFirstId2();
+            heap.removeFirst();
+            if (labels[idmap[xyz]]==0) {
+                int obj1 = Numerics.floor(obj1obj2/100)-1;
+                int obj2 = obj1obj2 - 100*(obj1+1) - 1;
+                double volsum = 0.0;
+                for (int obj=0;obj<nobj;obj++) volsum += vol[obj1][obj];
+                if (volsum<bestvol[obj1]) {
+                    // update the values
+                    vol[obj1][obj2]+=rx*ry*rz;
+                    labels[idmap[xyz]] = obj1obj2;
+                
+                    // add neighbors
+                    //for (byte k = 0; k<6; k++) {
+                    for (byte k = 0; k<26; k++) {
+                        int ngb = Ngb.neighborIndex(k, xyz, nx, ny, nz);
+                        if (ngb>0 && ngb<nxyz && idmap[ngb]>-1) {
+                            if (mask[ngb]) {
+                                if (labels[idmap[ngb]]==0) {
+                                    for (int best=0;best<nbest;best++) {
+                                        // same label
+                                        if (combinedLabels[best][idmap[ngb]]==obj1obj2) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,obj1obj2);
+                                            } else {
+                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,obj1obj2);
+                                            }
+                                            best=nbest;
+                                        // boundary labels    
+                                        } else if (combinedLabels[best][idmap[ngb]]>100*(obj1+1) && combinedLabels[best][idmap[ngb]]<100*(obj1+2)) {
+                                            if (best==0) {
+                                                heap.addValue(combinedProbas[0][idmap[ngb]]-combinedProbas[1][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            } else {
+                                                heap.addValue(combinedProbas[best][idmap[ngb]]-combinedProbas[0][idmap[ngb]],ngb,combinedLabels[best][idmap[ngb]]);
+                                            }
+                                            best=nbest;
+                                        }
+                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // final segmentation: collapse onto result images
+        finalLabel = new int[nxyz];
+        finalProba = new float[nxyz];
         float[] kept = new float[nobj];
         for (int x=1;x<ntx-1;x++) for (int y=1;y<nty-1;y++) for (int z=1;z<ntz-1;z++) {
-            int idx = x+ntx*y+ntx*nty*z;
-            int xyz = Numerics.bounded(Numerics.round(map2target[idx]),0,nx-1)
-                    + nx*Numerics.bounded(Numerics.round(map2target[idx+ntxyz]),0,ny-1)
-                    + nx*ny*Numerics.bounded(Numerics.round(map2target[idx+2*ntxyz]),0,nz-1);
+            int xyz = x+ntx*y+ntx*nty*z;
             if (mask[xyz]) {
-                int obj = labels[idx];
+                if (labels[idmap[xyz]]==0) labels[idmap[xyz]] = 101;
+                int obj = Numerics.floor(labels[idmap[xyz]]/100)-1;
                 for (int best=0;best<nbest;best++) {
-                    if (combinedLabels[best][idmap[xyz]]==obj) {
-                        if (best==0) {
-                            finalProba[idx] = combinedProbas[0][idmap[xyz]]-combinedProbas[1][idmap[xyz]];
-                        } else {
-                            finalProba[idx] = combinedProbas[best][idmap[xyz]]-combinedProbas[0][idmap[xyz]];
-                        }
+                    if (combinedLabels[best][idmap[xyz]]==labels[idmap[xyz]]) {
+                    //if (combinedLabels[best][idmap[xyz]]>100*(obj+1) && combinedLabels[best][idmap[xyz]]<100*(obj+2)) {
+                        finalProba[xyz] = combinedProbas[best][idmap[xyz]];
                         best=nbest;
                     }
                 }
+                finalLabel[xyz] = obj;
             }
         }
         return;            
-	}*/
-	
+	}
+		
 }
 
