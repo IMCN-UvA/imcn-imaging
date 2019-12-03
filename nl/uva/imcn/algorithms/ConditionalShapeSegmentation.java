@@ -2185,10 +2185,11 @@ public class ConditionalShapeSegmentation {
 		target = null;
 	}
 		
-	public final void globalSmoothing() {	
+	public final void globalSmoothing(int nngb) {	
 		
 		System.out.print("global smoothing step: \n");
-		
+        ngbw = new float[nngb+1][ndata];
+				
 		float[][] smoothedProbas = new float[nbest][ndata]; 
 		int[][] smoothedLabels = new int[nbest][ndata];
 		for (int t=0;t<maxiter;t++) {
@@ -2233,8 +2234,8 @@ public class ConditionalShapeSegmentation {
                                     }
                                 }
                             }
-                            smoothed[obj1][obj2] += 2.0*den*combinedProbas[best][id];
-                            if (den>0) smoothed[obj1][obj2] /= 3.0*den;
+                            smoothed[obj1][obj2] += 9.0*den*combinedProbas[best][id];
+                            if (den>0) smoothed[obj1][obj2] /= 10.0*den;
                         }
                     }
                     for (int best=0;best<nbest;best++) {

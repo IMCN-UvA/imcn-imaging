@@ -534,7 +534,7 @@ public class LocalContrastAndTimeDenoising {
                 System.out.print((t/tstep)+" ");
     		}
             if (!skip) {
-                System.out.print("...\n");
+                System.out.print("... ");
                 for (int x=0;x<nx;x+=nstep) for (int y=0;y<ny;y+=nstep) for (int z=0;z<nz;z+=nstep) {
                     int ngbx = Numerics.min(ngb, nx-x);
                     int ngby = Numerics.min(ngb, ny-y);
@@ -629,13 +629,13 @@ public class LocalContrastAndTimeDenoising {
                         double variance = 0.0;
                         for (int n=nfit;n<ntime*2*nc;n++) meaneig += Numerics.abs(eig[n]);
                         meaneig /= (ntime*2*nc-nfit);
-                        for (int n=nfit;n<ntime*nc;n++) {
+                        for (int n=nfit;n<ntime*2*nc;n++) {
                             variance += (meaneig-Numerics.abs(eig[n]))*(meaneig-Numerics.abs(eig[n]));
                             residual += (expected[n]-Numerics.abs(eig[n]))*(expected[n]-Numerics.abs(eig[n]));
                         }
                         double rsquare = 1.0;
                         if (variance>0) rsquare = Numerics.max(1.0 - (residual/variance), 0.0);
-                        
+                         
                         for (int n=0;n<ntime*2*nc;n++) {
                             //System.out.print(" "+(eig[n]/sigma));
                             if (n>=minDimension && Numerics.abs(eig[n]) < stdevCutoff*expected[n]) {
