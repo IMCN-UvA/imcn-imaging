@@ -4,7 +4,6 @@ import java.io.*;
 import java.util.*;
 import nl.uva.imcn.structures.BinaryTree;
 import nl.uva.imcn.structures.CriticalPointLUT;
-import nl.uva.imcn.utilities.BasicInfo;
 import nl.uva.imcn.libraries.ObjectStatistics;
  
 /**
